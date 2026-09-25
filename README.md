@@ -5,6 +5,15 @@
 Десктоп-застосунок для трекінгу уваги користувача через веб-камеру під час
 роботи/навчання
 
+## Структура
+ 
+| Каталог | Зміст |
+|---|---|
+| `core/features.py` | EAR, Yaw/Pitch/Roll, Gaze_raw, EMA-згладжування — **готово** |
+| `core/capture.py` | камера + MediaPipe Face Mesh — **готово** |
+| `tests/` | unit-тести (`unittest`) для `core/features.py` |
+
+
 ## Стек технологій
  
 - **Python 3.11+**
@@ -17,15 +26,11 @@
 
 ## Зовнішні бібліотеки
  
-| Бібліотека | Версія | Для чого |
-|---|---|---|
-| **mediapipe** | `0.10.35` | Face Mesh — детекція 478 3D-landmark-ів обличчя (`refine_landmarks=True` дає додатково точки райдужки, потрібні для `compute_gaze_raw`). Використовується в `core/capture.py`. |
-| **opencv-python** | latest | Захоплення відео з камери (`cv2.VideoCapture`), конвертація кольорових просторів, розв'язання PnP-задачі (`cv2.solvePnP`, `cv2.Rodrigues`) для head pose в `core/features.py`. |
-| **numpy** | latest | Векторні обчислення — відстані між landmark-ами, медіана у згладжуванні, побудова масивів координат. |
- 
-Тести (`tests/test_features.py`) додатково використовують `unittest`
-(стандартна бібліотека) та ті самі `opencv-python`/`numpy` — окремих
-тестових залежностей у проєкті немає.
+| Бібліотека | Для чого |
+|---|---|
+| [mediapipe](https://github.com/google/mediapipe) `0.10.35` | Face Mesh — 478 landmark-ів обличчя + райдужка |
+| [opencv-python](https://github.com/opencv/opencv-python) | захоплення відео, `solvePnP`/`Rodrigues` для head pose |
+| [numpy](https://numpy.org/) | векторні обчислення (відстані, медіана, масиви) |
 
 ## Запуск
  
@@ -33,3 +38,9 @@
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 ```
+
+## Використання ШІ
+ 
+Під час розробки використовується Claude (Anthropic) як асистент.
+Історія запитів зберігається; весь код переглядається й розуміється
+автором.
