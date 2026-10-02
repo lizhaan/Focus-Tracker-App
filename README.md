@@ -9,8 +9,8 @@
  
 | Каталог | Зміст |
 |---|---|
-| `core/features.py` | EAR, Yaw/Pitch/Roll, Gaze_raw, EMA-згладжування — **готово** |
-| `core/capture.py` | камера + MediaPipe Face Mesh — **готово** |
+| `core/features.py` | EAR, Yaw/Pitch/Roll, Gaze_raw, EMA-згладжування |
+| `core/capture.py` | камера + MediaPipe Face Mesh |
 | `tests/` | unit-тести (`unittest`) для `core/features.py` |
 
 
