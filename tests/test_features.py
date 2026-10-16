@@ -1,231 +1,222 @@
 import math
-import unittest
 
 import cv2
 import numpy as np
+import pytest
 
-from core.features import (
-    HEAD_POSE_LANDMARKS,
-    LEFT_EYE,
-    MODEL_POINTS_3D,
-    RIGHT_EYE,
-    IRIS_CENTER,
-    MetricsSmoother,
-    _camera_matrix,
-    compute_ear,
-    compute_gaze_raw,
-    compute_head_pose,
+from attention_tracker.vision.features import (
+    FeatureExtractor,
+    camera_matrix,
+    ear,
+    eye_gaze,
+    gaze_raw,
+    head_pose,
+    iris_distance_px,
+    to_pixels,
+    wrap,
+)
+from attention_tracker.vision.landmarks import (
+    FACE_MODEL_3D,
+    HEAD_POSE_INDICES,
+    LEFT_EYE_EAR,
+    LEFT_EYE_GAZE,
+    N_LANDMARKS,
+    RIGHT_EYE_EAR,
+    RIGHT_EYE_GAZE,
 )
 
-N_LANDMARKS = 478
+W, H = 640, 480  # W ≠ H — перевіряємо, що все рахується в пікселях
 
 
-def make_landmarks(overrides: dict) -> np.ndarray:
-    landmarks = np.zeros((N_LANDMARKS, 3), dtype=np.float64)
-    for idx, (x, y, z) in overrides.items():
-        landmarks[idx] = (x, y, z)
-    return landmarks
+def landmarks_from_px(points: dict[int, tuple[float, float]]) -> np.ndarray:
+    """Нормалізовані landmarks (478, 3) з точок у пікселях."""
+    lm = np.zeros((N_LANDMARKS, 3), dtype=np.float64)
+    for idx, (u, v) in points.items():
+        lm[idx] = (u / W, v / H, 0.0)
+    return lm
 
 
-# 1. EAR
-class TestEAR(unittest.TestCase):
-    def _eye_landmarks(self, eye: dict, horizontal: float, vertical_gap: float) -> dict:
-        return {
-            eye["P1"]: (0.0, 0.0, 0.0),  # зовнішній кут
-            eye["P4"]: (horizontal, 0.0, 0.0),  # внутрішній кут
-            eye["P2"]: (horizontal * 0.3, -vertical_gap / 2, 0.0),  # верхня повіка
-            eye["P3"]: (horizontal * 0.7, -vertical_gap / 2, 0.0),
-            eye["P5"]: (horizontal * 0.7, vertical_gap / 2, 0.0),  # нижня повіка
-            eye["P6"]: (horizontal * 0.3, vertical_gap / 2, 0.0),
-        }
-
-    def _make_face(self, vertical_gap_right: float, vertical_gap_left: float) -> np.ndarray:
-        overrides = {}
-        overrides.update(self._eye_landmarks(RIGHT_EYE, horizontal=0.1, vertical_gap=vertical_gap_right))
-        overrides.update(self._eye_landmarks(LEFT_EYE, horizontal=0.1, vertical_gap=vertical_gap_left))
-        return make_landmarks(overrides)
-
-    def test_open_eyes_give_expected_ear(self):
-        landmarks = self._make_face(vertical_gap_right=0.06, vertical_gap_left=0.06)
-        ear = compute_ear(landmarks)
-        self.assertAlmostEqual(ear, 0.6, places=6)
-        self.assertGreater(ear, 0.15)  # явно "відкрите" око
-
-    def test_closed_eyes_give_low_ear(self):
-        landmarks = self._make_face(vertical_gap_right=0.002, vertical_gap_left=0.002)
-        ear = compute_ear(landmarks)
-        self.assertLess(ear, 0.05)  # явно "закрите" око
-
-    def test_open_ear_greater_than_closed(self):
-        open_landmarks = self._make_face(vertical_gap_right=0.06, vertical_gap_left=0.06)
-        closed_landmarks = self._make_face(vertical_gap_right=0.002, vertical_gap_left=0.002)
-        self.assertGreater(compute_ear(open_landmarks), compute_ear(closed_landmarks))
-
-    def test_ear_handles_degenerate_horizontal_distance(self):
-        overrides = {
-            RIGHT_EYE["P1"]: (0.0, 0.0, 0.0),
-            RIGHT_EYE["P4"]: (0.0, 0.0, 0.0),
-            RIGHT_EYE["P2"]: (0.0, -0.01, 0.0),
-            RIGHT_EYE["P3"]: (0.0, -0.01, 0.0),
-            RIGHT_EYE["P5"]: (0.0, 0.01, 0.0),
-            RIGHT_EYE["P6"]: (0.0, 0.01, 0.0),
-        }
-        overrides.update(self._eye_landmarks(LEFT_EYE, horizontal=0.1, vertical_gap=0.05))
-        landmarks = make_landmarks(overrides)
-        ear = compute_ear(landmarks)
-        self.assertTrue(math.isfinite(ear))
+def project_face(rvec, tvec) -> dict[int, tuple[float, float]]:
+    pts, _ = cv2.projectPoints(
+        FACE_MODEL_3D, np.asarray(rvec, float), np.asarray(tvec, float),
+        camera_matrix(W, H), np.zeros((4, 1)),
+    )
+    return {idx: tuple(p) for idx, p in zip(HEAD_POSE_INDICES, pts.reshape(-1, 2))}
 
 
-# Head Pose
-class TestHeadPose(unittest.TestCase):
-    WIDTH, HEIGHT = 640, 480
-
-    def _project_and_build_landmarks(self, rvec, tvec) -> np.ndarray:
-        camera_matrix = _camera_matrix(self.WIDTH, self.HEIGHT)
-        dist_coeffs = np.zeros((4, 1))
-
-        image_points_px, _ = cv2.projectPoints(
-            MODEL_POINTS_3D, rvec, tvec, camera_matrix, dist_coeffs
-        )
-        image_points_px = image_points_px.reshape(-1, 2)
-
-        overrides = {}
-        for (idx), (px, py) in zip(HEAD_POSE_LANDMARKS.values(), image_points_px):
-            overrides[idx] = (px / self.WIDTH, py / self.HEIGHT, 0.0)
-        return make_landmarks(overrides)
-
-    def test_frontal_face_gives_near_zero_yaw_pitch(self):
-        rvec = np.array([[0.0], [0.0], [0.0]])
-        tvec = np.array([[0.0], [0.0], [500.0]])
-        landmarks = self._project_and_build_landmarks(rvec, tvec)
-
-        pose = compute_head_pose(landmarks, self.WIDTH, self.HEIGHT)
-
-        self.assertIsNotNone(pose)
-        self.assertAlmostEqual(pose.yaw, 0.0, delta=1.0)
-        self.assertAlmostEqual(pose.pitch, 0.0, delta=1.0)
-        self.assertAlmostEqual(pose.roll, 0.0, delta=1.0)
-
-    def test_yaw_rotation_is_recovered_with_correct_sign_and_magnitude(self):
-        yaw_deg = 20.0
-        rvec = np.array([[0.0], [math.radians(yaw_deg)], [0.0]])
-        tvec = np.array([[0.0], [0.0], [500.0]])
-        landmarks = self._project_and_build_landmarks(rvec, tvec)
-
-        pose = compute_head_pose(landmarks, self.WIDTH, self.HEIGHT)
-
-        self.assertIsNotNone(pose)
-        self.assertAlmostEqual(pose.yaw, yaw_deg, delta=1.5)
-        self.assertAlmostEqual(pose.pitch, 0.0, delta=1.5)
-
-    def test_pitch_rotation_is_recovered_with_correct_sign_and_magnitude(self):
-        pitch_deg = -15.0  # нахил голови вниз
-        rvec = np.array([[math.radians(pitch_deg)], [0.0], [0.0]])
-        tvec = np.array([[0.0], [0.0], [500.0]])
-        landmarks = self._project_and_build_landmarks(rvec, tvec)
-
-        pose = compute_head_pose(landmarks, self.WIDTH, self.HEIGHT)
-
-        self.assertIsNotNone(pose)
-        self.assertAlmostEqual(pose.pitch, pitch_deg, delta=1.5)
-        self.assertAlmostEqual(pose.yaw, 0.0, delta=1.5)
+def eye_points(eye, x0: float, y0: float, width: float, gap: float) -> dict:
+    """Око P1..P6 у пікселях: кути на (x0, y0) і (x0+width, y0), повіки ±gap/2."""
+    p1, p2, p3, p4, p5, p6 = eye
+    return {
+        p1: (x0, y0), p4: (x0 + width, y0),
+        p2: (x0 + 0.3 * width, y0 - gap / 2), p3: (x0 + 0.7 * width, y0 - gap / 2),
+        p5: (x0 + 0.7 * width, y0 + gap / 2), p6: (x0 + 0.3 * width, y0 + gap / 2),
+    }
 
 
-# Gaze_raw — граничні значення
-
-class TestGazeRaw(unittest.TestCase):
-    def _base_eye_overrides(self, eye: dict, iris_idx: int, iris_pos) -> dict:
-        return {
-            eye["P1"]: (0.0, 0.0, 0.0),
-            eye["P4"]: (0.1, 0.0, 0.0),
-            eye["P2"]: (0.03, -0.02, 0.0),
-            eye["P3"]: (0.07, -0.02, 0.0),
-            eye["P5"]: (0.07, 0.02, 0.0),
-            eye["P6"]: (0.03, 0.02, 0.0),
-            iris_idx: iris_pos,
-        }
-
-    def _both_eyes(self, iris_offset_from_outer: float) -> np.ndarray:
-        overrides = {}
-        overrides.update(
-            self._base_eye_overrides(
-                RIGHT_EYE, IRIS_CENTER["right"], (iris_offset_from_outer, 0.0, 0.0)
-            )
-        )
-        overrides.update(
-            self._base_eye_overrides(
-                LEFT_EYE, IRIS_CENTER["left"], (iris_offset_from_outer, 0.0, 0.0)
-            )
-        )
-        return make_landmarks(overrides)
-
-    def test_iris_at_outer_corner_gives_zero_horizontal_ratio(self):
-        # iris = outer corner (x=0) => D_out = 0 => Gaze_raw = 0/D_in = 0
-        landmarks = self._both_eyes(iris_offset_from_outer=0.0)
-        gaze_raw, gaze_vertical_raw = compute_gaze_raw(landmarks)
-        self.assertAlmostEqual(gaze_raw, 0.0, places=6)
-        self.assertTrue(math.isfinite(gaze_vertical_raw))
-
-    def test_iris_at_inner_corner_does_not_raise_and_is_finite(self):
-        landmarks = self._both_eyes(iris_offset_from_outer=0.1)
-        gaze_raw, gaze_vertical_raw = compute_gaze_raw(landmarks)
-        self.assertTrue(math.isfinite(gaze_raw))
-        self.assertTrue(math.isfinite(gaze_vertical_raw))
-        self.assertEqual(gaze_raw, 0.0)
-
-    def test_iris_in_the_middle_gives_ratio_around_one(self):
-        landmarks = self._both_eyes(iris_offset_from_outer=0.05)
-        gaze_raw, _ = compute_gaze_raw(landmarks)
-        self.assertAlmostEqual(gaze_raw, 1.0, places=6)
+# --- MATH §0.2 wrap -------------------------------------------------------------
 
 
-# 5. MetricsSmoother
+@pytest.mark.parametrize(
+    "theta, expected",
+    [(0.0, 0.0), (179.0, 179.0), (181.0, -179.0), (-181.0, 179.0),
+     (360.0, 0.0), (190.0, -170.0), (-190.0, 170.0), (540.0, -180.0)],
+)
+def test_wrap(theta, expected):
+    assert wrap(theta) == pytest.approx(expected)
 
 
-class TestMetricsSmoother(unittest.TestCase):
-    def test_rejects_invalid_window_size(self):
-        with self.assertRaises(ValueError):
-            MetricsSmoother(window_size=2, alpha=0.3)
-        with self.assertRaises(ValueError):
-            MetricsSmoother(window_size=6, alpha=0.3)
-
-    def test_rejects_invalid_alpha(self):
-        with self.assertRaises(ValueError):
-            MetricsSmoother(window_size=3, alpha=0.0)
-        with self.assertRaises(ValueError):
-            MetricsSmoother(window_size=3, alpha=1.5)
-
-    def test_median_filter_suppresses_single_frame_outlier(self):
-        smoother = MetricsSmoother(window_size=3, alpha=0.3)
-        signal = [1.0, 1.0, 1.0, 100.0, 1.0, 1.0, 1.0]
-
-        outputs = [smoother.update("ear", v) for v in signal]
-        spike_index = signal.index(100.0)
-
-        self.assertLess(outputs[spike_index], 2.0)
-
-    def test_ema_converges_towards_constant_signal(self):
-        smoother = MetricsSmoother(window_size=3, alpha=0.4)
-        outputs = [smoother.update("yaw", 5.0) for _ in range(20)]
-        self.assertAlmostEqual(outputs[-1], 5.0, places=3)
-
-    def test_independent_signals_do_not_interfere(self):
-        smoother = MetricsSmoother(window_size=3, alpha=0.3)
-        for _ in range(5):
-            smoother.update("ear", 0.3)
-        for _ in range(5):
-            smoother.update("pitch", -10.0)
-
-        self.assertAlmostEqual(smoother.update("ear", 0.3), 0.3, places=3)
-        self.assertAlmostEqual(smoother.update("pitch", -10.0), -10.0, places=3)
-
-    def test_reset_clears_state(self):
-        smoother = MetricsSmoother(window_size=3, alpha=0.3)
-        smoother.update("ear", 0.9)
-        smoother.reset("ear")
-        first_value_after_reset = smoother.update("ear", 0.1)
-        self.assertAlmostEqual(first_value_after_reset, 0.1, places=6)
+def test_wrap_at_180_boundary_stays_on_boundary():
+    assert abs(wrap(180.0)) == pytest.approx(180.0)
+    assert abs(wrap(-180.0)) == pytest.approx(180.0)
 
 
-if __name__ == "__main__":
-    unittest.main()
+# --- MATH §1 EAR ----------------------------------------------------------------
+
+
+def test_ear_known_geometry_in_pixels():
+    # ширина 60 px, щілина 12 px → EAR = (12 + 12) / (2·60) = 0.2
+    pts = {**eye_points(RIGHT_EYE_EAR, 100, 200, 60, 12),
+           **eye_points(LEFT_EYE_EAR, 300, 200, 60, 12)}
+    px = to_pixels(landmarks_from_px(pts), W, H)
+    assert ear(px) == pytest.approx(0.2)
+
+
+def test_ear_closed_lower_than_open():
+    open_px = to_pixels(landmarks_from_px({**eye_points(RIGHT_EYE_EAR, 100, 200, 60, 12),
+                                           **eye_points(LEFT_EYE_EAR, 300, 200, 60, 12)}), W, H)
+    closed_px = to_pixels(landmarks_from_px({**eye_points(RIGHT_EYE_EAR, 100, 200, 60, 1),
+                                             **eye_points(LEFT_EYE_EAR, 300, 200, 60, 1)}), W, H)
+    assert ear(closed_px) < ear(open_px)
+
+
+def test_ear_degenerate_eye_is_finite():
+    pts = {**eye_points(RIGHT_EYE_EAR, 100, 200, 0, 12),
+           **eye_points(LEFT_EYE_EAR, 300, 200, 60, 12)}
+    assert math.isfinite(ear(to_pixels(landmarks_from_px(pts), W, H)))
+
+
+# --- MATH §2 head pose ---------------------------------------------------------
+
+
+def test_frontal_face_gives_zero_angles():
+    px = to_pixels(landmarks_from_px(project_face([0, 0, 0], [0, 0, 500])), W, H)
+    pose = head_pose(px, W, H)
+    assert pose is not None
+    assert pose.yaw == pytest.approx(0.0, abs=1.0)
+    assert pose.pitch == pytest.approx(0.0, abs=1.0)
+    assert pose.roll == pytest.approx(0.0, abs=1.0)
+
+
+@pytest.mark.parametrize("axis, field", [(0, "pitch"), (1, "yaw"), (2, "roll")])
+def test_single_axis_rotation_is_recovered(axis, field):
+    angle = 15.0
+    rvec = [0.0, 0.0, 0.0]
+    rvec[axis] = math.radians(angle)
+    px = to_pixels(landmarks_from_px(project_face(rvec, [0, 0, 500])), W, H)
+    pose = head_pose(px, W, H)
+    assert pose is not None
+    for name in ("yaw", "pitch", "roll"):
+        expected = angle if name == field else 0.0
+        assert getattr(pose, name) == pytest.approx(expected, abs=1.5)
+
+
+def test_head_pose_with_extrinsic_guess_matches():
+    px = to_pixels(landmarks_from_px(project_face([0, math.radians(10), 0], [0, 0, 500])), W, H)
+    first = head_pose(px, W, H)
+    second = head_pose(px, W, H, prev=(first.rvec, first.tvec))
+    assert second is not None
+    assert second.yaw == pytest.approx(first.yaw, abs=0.1)
+
+
+# --- MATH §3.1 gaze ------------------------------------------------------------
+
+
+def gaze_face(iris_shift: tuple[float, float] = (0.0, 0.0)) -> dict:
+    """Обидва ока шириною 60 px; райдужки по центру + зсув."""
+    dx, dy = iris_shift
+    r_cl, r_cr, r_i = RIGHT_EYE_GAZE
+    l_cl, l_cr, l_i = LEFT_EYE_GAZE
+    return {
+        r_cl: (100, 200), r_cr: (160, 200), r_i: (130 + dx, 200 + dy),
+        l_cl: (220, 200), l_cr: (280, 200), l_i: (250 + dx, 200 + dy),
+    }
+
+
+def per_eye(px):
+    return (eye_gaze(*(px[i] for i in RIGHT_EYE_GAZE)),
+            eye_gaze(*(px[i] for i in LEFT_EYE_GAZE)))
+
+
+def test_centered_iris_gives_half_and_zero():
+    px = to_pixels(landmarks_from_px(gaze_face()), W, H)
+    assert gaze_raw(px) == pytest.approx((0.5, 0.0))
+
+
+def test_iris_shift_right_increases_both_eyes():
+    base_r, base_l = per_eye(to_pixels(landmarks_from_px(gaze_face()), W, H))
+    shift_r, shift_l = per_eye(to_pixels(landmarks_from_px(gaze_face((6, 0))), W, H))
+    assert shift_r[0] > base_r[0]
+    assert shift_l[0] > base_l[0]
+    assert shift_r[0] == pytest.approx(0.6)
+    assert shift_l[0] == pytest.approx(0.6)
+
+
+def test_iris_below_axis_gives_positive_v():
+    px = to_pixels(landmarks_from_px(gaze_face((0, 3))), W, H)
+    _, gaze_v = gaze_raw(px)
+    assert gaze_v == pytest.approx(3 / 60)
+
+
+def test_gaze_invariant_to_roll_and_scale():
+    c_l, c_r, iris = np.array([0.0, 0.0]), np.array([60.0, 0.0]), np.array([36.0, 3.0])
+    expected = eye_gaze(c_l, c_r, iris)
+    a = math.radians(30)
+    rot = np.array([[math.cos(a), -math.sin(a)], [math.sin(a), math.cos(a)]])
+    offset = np.array([200.0, 150.0])
+    transformed = [2.0 * rot @ p + offset for p in (c_l, c_r, iris)]
+    assert eye_gaze(*transformed) == pytest.approx(expected)
+
+
+def test_degenerate_eye_axis_gives_none():
+    p = np.array([10.0, 10.0])
+    assert eye_gaze(p, p, p) is None
+
+
+# --- FeatureExtractor ----------------------------------------------------------
+
+
+def full_face_landmarks() -> np.ndarray:
+    """Проєкція моделі §2.1 + внутрішні кути й райдужки біля спроєктованих 33/263."""
+    pts = project_face([0, 0, 0], [0, 0, 500])
+    r_cl, r_cr, r_i = RIGHT_EYE_GAZE
+    l_cl, l_cr, l_i = LEFT_EYE_GAZE
+    r_out, l_out = np.array(pts[r_cl]), np.array(pts[l_cr])
+    pts[r_cr] = tuple(r_out + (20, 0))
+    pts[r_i] = tuple(r_out + (10, 0))
+    pts[l_cl] = tuple(l_out - (20, 0))
+    pts[l_i] = tuple(l_out - (10, 0))
+    return landmarks_from_px(pts)
+
+
+def test_iris_distance_px():
+    px = to_pixels(landmarks_from_px(gaze_face()), W, H)
+    assert iris_distance_px(px) == pytest.approx(120.0)
+
+
+def test_extractor_valid_frame():
+    f = FeatureExtractor().extract(full_face_landmarks(), ts=1.0, frame_w=W, frame_h=H)
+    assert f.valid
+    assert f.ts == 1.0
+    assert f.yaw == pytest.approx(0.0, abs=1.0)
+    assert f.gaze_h is not None and f.iris_distance_px is not None
+
+
+def test_extractor_no_face_is_invalid_and_resets_pose():
+    ex = FeatureExtractor()
+    ex.extract(full_face_landmarks(), ts=1.0, frame_w=W, frame_h=H)
+    assert ex._prev_pose is not None
+    f = ex.extract(None, ts=2.0, frame_w=W, frame_h=H)
+    assert not f.valid
+    assert f.ts == 2.0
+    assert ex._prev_pose is None
