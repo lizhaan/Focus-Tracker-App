@@ -54,7 +54,7 @@ def eye_points(eye, x0: float, y0: float, width: float, gap: float) -> dict:
     }
 
 
-# --- MATH §0.2 wrap -------------------------------------------------------------
+# --- wrap -------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -71,7 +71,7 @@ def test_wrap_at_180_boundary_stays_on_boundary():
     assert abs(wrap(-180.0)) == pytest.approx(180.0)
 
 
-# --- MATH §1 EAR ----------------------------------------------------------------
+# --- EAR ----------------------------------------------------------------
 
 
 def test_ear_known_geometry_in_pixels():
@@ -96,7 +96,7 @@ def test_ear_degenerate_eye_is_finite():
     assert math.isfinite(ear(to_pixels(landmarks_from_px(pts), W, H)))
 
 
-# --- MATH §2 head pose ---------------------------------------------------------
+# --- head pose ---------------------------------------------------------
 
 
 def test_frontal_face_gives_zero_angles():
@@ -129,7 +129,7 @@ def test_head_pose_with_extrinsic_guess_matches():
     assert second.yaw == pytest.approx(first.yaw, abs=0.1)
 
 
-# --- MATH §3.1 gaze ------------------------------------------------------------
+# --- gaze ------------------------------------------------------------
 
 
 def gaze_face(iris_shift: tuple[float, float] = (0.0, 0.0)) -> dict:
@@ -187,7 +187,7 @@ def test_degenerate_eye_axis_gives_none():
 
 
 def full_face_landmarks() -> np.ndarray:
-    """Проєкція моделі §2.1 + внутрішні кути й райдужки біля спроєктованих 33/263."""
+    """Проєкція 3D-моделі обличчя + внутрішні кути й райдужки біля спроєктованих 33/263."""
     pts = project_face([0, 0, 0], [0, 0, 500])
     r_cl, r_cr, r_i = RIGHT_EYE_GAZE
     l_cl, l_cr, l_i = LEFT_EYE_GAZE

@@ -1,4 +1,4 @@
-"""Згладжування сигналів: median + EMA (MATH §5)."""
+"""Згладжування сигналів: median + EMA."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from attention_tracker.models import FrameFeatures
 
 
 class MedianEmaFilter:
-    """MATH §5: x_med = median(останні k), x̂ = α·x_med + (1−α)·x̂(t−1).
+    """x_med = median(останні k), x̂ = α·x_med + (1−α)·x̂(t−1).
 
     Перший вихід x̂ = x_med(перший).
     """
@@ -41,14 +41,14 @@ class MedianEmaFilter:
 
 
 class SignalFilter:
-    """MATH §5: згладжує EAR, Yaw, Pitch, Gaze_h, Gaze_v у `FrameFeatures`.
+    """згладжує EAR, Yaw, Pitch, Gaze_h, Gaze_v у `FrameFeatures`.
 
     Yaw/Pitch згладжуються сирими: median і EMA лінійні, тому
     згладити Yaw і потім відняти baseline — те саме, що згладити ΔYaw.
-    Відрізнялося б тільки біля ±180°, але такі кадри невалідні (§4.1).
+    Відрізнялося б тільки біля ±180°, але такі кадри невалідні.
 
     Невалідні кадри повертаються без змін і не оновлюють фільтри. Скидання
-    після `T_noface` (§4.1) викликає детектор через `reset()`.
+    після `T_noface` викликає детектор через `reset()`.
     """
 
     FIELDS = ("ear", "yaw", "pitch", "gaze_h", "gaze_v")

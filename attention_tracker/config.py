@@ -1,10 +1,3 @@
-"""Усі числові параметри застосунку (MATH §9, PROJECT_PLAN §8, §11).
-
-Логіка отримує потрібну секцію `AppConfig` як аргумент, а не читає
-константи напряму. Зміна налаштувань користувачем створює новий обʼєкт
-через `dataclasses.replace`.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -15,7 +8,7 @@ ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
 @dataclass(frozen=True)
 class CameraConfig:
-    """PROJECT_PLAN §8.5: камера (індекс + роздільна здатність)."""
+    """камера (індекс + роздільна здатність)."""
 
     index: int = 0
     width: int = 1280
@@ -26,7 +19,7 @@ class CameraConfig:
 
 @dataclass(frozen=True)
 class LandmarkerConfig:
-    """MATH §0: FaceLandmarker, running_mode=VIDEO, num_faces=1.
+    """FaceLandmarker, running_mode=VIDEO, num_faces=1.
 
     Пороги впевненості — стандартні значення MediaPipe (документи їх не задають).
     """
@@ -40,7 +33,7 @@ class LandmarkerConfig:
 
 @dataclass(frozen=True)
 class FilterConfig:
-    """MATH §5: median (k кадрів) + EMA (α)."""
+    """median (k кадрів) + EMA (α)."""
 
     median_window: int = 5
     ema_alpha: float = 0.35
@@ -48,20 +41,19 @@ class FilterConfig:
 
 @dataclass(frozen=True)
 class DistractionConfig:
-    """MATH §3.2, §3.4, §4."""
 
-    t_blink: float = 0.5  # с, §4.2
-    t_noface: float = 0.5  # с, §4.1
-    invalid_yaw_deg: float = 45.0  # §4.1
-    invalid_pitch_deg: float = 40.0  # §4.1
-    eps_out: float = 0.05  # §3.4
-    eps_in: float = 0.02  # §3.4
-    ear_freeze_factor: float = 0.7  # §3.2: ear_freeze = 0.7 · EAR_bottom
+    t_blink: float = 0.5  # с
+    t_noface: float = 0.5  # с
+    invalid_yaw_deg: float = 45.0
+    invalid_pitch_deg: float = 40.0
+    eps_out: float = 0.05
+    eps_in: float = 0.02
+    ear_freeze_factor: float = 0.7  # ear_freeze = 0.7 · EAR_bottom
 
 
 @dataclass(frozen=True)
 class AlphaThresholdsConfig:
-    """PROJECT_PLAN §11, Етап 2 п.3: тимчасові пороги без регресії.
+    """Етап 2 п.3: тимчасові пороги без регресії.
 
     gaze_out = |Gaze_h − gaze_h_center| > gaze_h_delta OR |ΔYaw| > yaw_delta_deg,
     baseline береться з перших baseline_duration секунд сесії.
@@ -75,7 +67,7 @@ class AlphaThresholdsConfig:
 
 @dataclass(frozen=True)
 class FocusConfig:
-    """MATH §6: таймери машини станів. n і y налаштовує користувач (§8.5)."""
+    """таймери машини станів. n і y налаштовує користувач."""
 
     n: float = 3.0  # с
     y: float = 2.0  # с
@@ -89,49 +81,49 @@ class FocusConfig:
 
 @dataclass(frozen=True)
 class CalibrationConfig:
-    """MATH §7: збір даних, пороги, регресія, перевірка якості."""
+    """збір даних, пороги, регресія, перевірка якості."""
 
-    # §7.0 перевірка перед стартом
+    # перевірка перед стартом
     precheck_duration: float = 2.0  # с
     precheck_face_ratio: float = 0.90
     iris_distance_min_frac: float = 0.08  # · W
     iris_distance_max_frac: float = 0.30  # · W
     min_fps: float = 15.0
 
-    # §7.1 збір даних на кроці
+    # збір даних на кроці
     t_calib: float = 2.0  # с
     t_settle: float = 0.6  # с
     min_valid_ratio: float = 0.70
     mad_k: float = 3.0
 
-    # §7 крок 3: повороти голови
+    # крок 3: повороти голови
     head_yaw_range_deg: tuple[float, float] = (10.0, 25.0)
     head_pitch_range_deg: tuple[float, float] = (8.0, 20.0)
     s_pitch_min_deg: float = 5.0
 
-    # §7.2 пороги
+    # пороги
     ear_min_gap: float = 0.03
     pitch_min_gap_deg: float = 5.0
     pitch_fallback_margin_deg: float = 8.0
     pitch_min_margin_deg: float = 4.0
 
-    # §3.3, §7.4 регресія
+    # регресія
     ridge_lambda: float = 0.05
     sigma_min: float = 1e-6
 
-    # §7.5 перевірка якості
+    # перевірка якості
     n_check_points: int = 4
     error_ok: float = 0.08
     error_warn: float = 0.15
 
-    # §7.6 перецентрування
+    # перецентрування
     recenter_duration: float = 2.0  # с
     recenter_max_offset: float = 0.15
 
 
 @dataclass(frozen=True)
 class MetricsConfig:
-    """MATH §8: біни графіка концентрації."""
+    """біни графіка концентрації."""
 
     live_bin: float = 10.0  # с
     history_bin: float = 60.0  # с
@@ -139,7 +131,6 @@ class MetricsConfig:
 
 @dataclass(frozen=True)
 class UiConfig:
-    """PROJECT_PLAN §5.2, §5.3, §8.3."""
 
     frame_signal_hz: float = 10.0  # проріджування frame_processed для UI
     fps_report_interval: float = 1.0  # с
@@ -149,7 +140,7 @@ class UiConfig:
 
 @dataclass(frozen=True)
 class AppConfig:
-    """Корінь конфігурації (MATH §9)."""
+    """Корінь конфігурації."""
 
     camera: CameraConfig = field(default_factory=CameraConfig)
     landmarker: LandmarkerConfig = field(default_factory=LandmarkerConfig)

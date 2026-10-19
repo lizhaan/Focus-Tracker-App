@@ -1,4 +1,4 @@
-"""PipelineWorker (QThread): камера → landmarker → features → filter (PROJECT_PLAN §5.2–5.3).
+"""PipelineWorker (QThread): камера → landmarker → features → filter.
 
 Етап 2, крок 1: тільки ознаки для debug_view. Детектор і машина станів
 додаються в кроках 3–4. Назовні — тільки Qt-сигнали; у БД нічого не пише.
@@ -24,7 +24,7 @@ _MS_PER_S = 1000.0
 
 @dataclass(frozen=True)
 class DebugFrame:
-    """Payload сигналу debug_frame (FR-11): кадр, точки і сирі ознаки."""
+    """Payload сигналу debug_frame: кадр, точки і сирі ознаки."""
 
     frame_bgr: np.ndarray
     landmarks: np.ndarray | None

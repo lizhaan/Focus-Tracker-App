@@ -1,4 +1,4 @@
-"""Сирі ознаки кадру: EAR, поза голови, погляд (MATH §0.2, §1, §2, §3.1).
+"""Сирі ознаки кадру: EAR, поза голови, погляд.
 
 Усі геометричні обчислення — у пікселях. Функції чисті; стан (попередні
 rvec/tvec для solvePnP) тримає тільки `FeatureExtractor`.
@@ -27,25 +27,25 @@ _EPS = 1e-9  # захист від ділення на нуль у виродж�
 
 
 def wrap(theta: float) -> float:
-    """MATH §0.2: wrap(θ) = ((θ + 180) mod 360) − 180, градуси."""
+    """wrap(θ) = ((θ + 180) mod 360) − 180, градуси."""
     return ((theta + 180.0) % 360.0) - 180.0
 
 
 def to_pixels(landmarks: np.ndarray, frame_w: int, frame_h: int) -> np.ndarray:
-    """MATH §0: pᵢ = (xᵢ·W, yᵢ·H). Повертає масив (N, 2); z відкидається."""
+    """pᵢ = (xᵢ·W, yᵢ·H). Повертає масив (N, 2); z відкидається."""
     return landmarks[:, :2] * np.array([frame_w, frame_h], dtype=np.float64)
 
 
 def _dist(a: np.ndarray, b: np.ndarray) -> float:
-    """MATH §0.2: dist(a, b) = ‖a − b‖₂."""
+    """dist(a, b) = ‖a − b‖₂."""
     return float(np.linalg.norm(a - b))
 
 
-# --- MATH §1. EAR --------------------------------------------------------------
+# --- EAR --------------------------------------------------------------
 
 
 def eye_aspect_ratio(px: np.ndarray, eye: tuple[int, int, int, int, int, int]) -> float:
-    """MATH §1: EAR_eye = (dist(P2,P6) + dist(P3,P5)) / (2·dist(P1,P4))."""
+    """EAR_eye = (dist(P2,P6) + dist(P3,P5)) / (2·dist(P1,P4))."""
     p1, p2, p3, p4, p5, p6 = (px[i] for i in eye)
     horizontal = _dist(p1, p4)
     if horizontal < _EPS:
@@ -54,16 +54,16 @@ def eye_aspect_ratio(px: np.ndarray, eye: tuple[int, int, int, int, int, int]) -
 
 
 def ear(px: np.ndarray) -> float:
-    """MATH §1: EAR(t) = (EAR_right + EAR_left) / 2."""
+    """EAR(t) = (EAR_right + EAR_left) / 2."""
     return (eye_aspect_ratio(px, RIGHT_EYE_EAR) + eye_aspect_ratio(px, LEFT_EYE_EAR)) / 2.0
 
 
-# --- MATH §2. Head pose ----------------------------------------------------------
+# --- Head pose ----------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class HeadPose:
-    """MATH §2.3: кути в градусах + розвʼязок solvePnP для наступного кадру."""
+    """кути в градусах + розвʼязок solvePnP для наступного кадру."""
 
     yaw: float
     pitch: float
@@ -73,7 +73,7 @@ class HeadPose:
 
 
 def camera_matrix(frame_w: int, frame_h: int) -> np.ndarray:
-    """MATH §2.2: f = W, головна точка в центрі кадру."""
+    """f = W, головна точка в центрі кадру."""
     f = float(frame_w)
     return np.array(
         [[f, 0.0, frame_w / 2.0], [0.0, f, frame_h / 2.0], [0.0, 0.0, 1.0]],
@@ -82,7 +82,7 @@ def camera_matrix(frame_w: int, frame_h: int) -> np.ndarray:
 
 
 def angles_from_rotation(r: np.ndarray) -> tuple[float, float, float]:
-    """MATH §2.3: (yaw, pitch, roll) у градусах з матриці повороту R."""
+    """(yaw, pitch, roll) у градусах з матриці повороту R."""
     pitch = np.arctan2(r[2, 1], r[2, 2])
     yaw = np.arctan2(-r[2, 0], np.sqrt(r[2, 1] ** 2 + r[2, 2] ** 2))
     roll = np.arctan2(r[1, 0], r[0, 0])
@@ -95,7 +95,7 @@ def head_pose(
     frame_h: int,
     prev: tuple[np.ndarray, np.ndarray] | None = None,
 ) -> HeadPose | None:
-    """MATH §2.1–2.3. `None`, якщо solvePnP не зійшовся (кадр невалідний, §4.1)."""
+    """`None`, якщо solvePnP не зійшовся (кадр невалідний)."""
     image_pts = np.array([px[i] for i in HEAD_POSE_INDICES], dtype=np.float64)
     k = camera_matrix(frame_w, frame_h)
     dist_coeffs = np.zeros((4, 1), dtype=np.float64)
@@ -126,11 +126,11 @@ def head_pose(
     return HeadPose(yaw=yaw, pitch=pitch, roll=roll, rvec=rvec, tvec=tvec)
 
 
-# --- MATH §3.1. Gaze -----------------------------------------------------------
+# --- Gaze -----------------------------------------------------------
 
 
 def eye_gaze(c_l: np.ndarray, c_r: np.ndarray, iris: np.ndarray) -> tuple[float, float] | None:
-    """MATH §3.1: (g_eye, v_eye) для одного ока. `None` для виродженої осі ока."""
+    """(g_eye, v_eye) для одного ока. `None` для виродженої осі ока."""
     e = c_r - c_l
     w = float(np.linalg.norm(e))
     if w < _EPS:
@@ -144,7 +144,7 @@ def eye_gaze(c_l: np.ndarray, c_r: np.ndarray, iris: np.ndarray) -> tuple[float,
 
 
 def gaze_raw(px: np.ndarray) -> tuple[float, float] | None:
-    """MATH §3.1: Gaze_h = (g_right + g_left)/2, Gaze_v = (v_right + v_left)/2."""
+    """Gaze_h = (g_right + g_left)/2, Gaze_v = (v_right + v_left)/2."""
     right = eye_gaze(*(px[i] for i in RIGHT_EYE_GAZE))
     left = eye_gaze(*(px[i] for i in LEFT_EYE_GAZE))
     if right is None or left is None:
@@ -153,7 +153,7 @@ def gaze_raw(px: np.ndarray) -> tuple[float, float] | None:
 
 
 def iris_distance_px(px: np.ndarray) -> float:
-    """MATH §7.0: dist(p468, p473)."""
+    """dist(p468, p473)."""
     return _dist(px[RIGHT_IRIS], px[LEFT_IRIS])
 
 
@@ -161,9 +161,9 @@ def iris_distance_px(px: np.ndarray) -> float:
 
 
 class FeatureExtractor:
-    """MATH §1–3.1: landmarks кадру → `FrameFeatures` (сирі значення).
+    """landmarks кадру → `FrameFeatures` (сирі значення).
 
-    Тримає попередні rvec/tvec для `useExtrinsicGuess` (MATH §2.3) і скидає їх,
+    Тримає попередні rvec/tvec для `useExtrinsicGuess` і скидає їх,
     коли обличчя втрачено або solvePnP не зійшовся.
     """
 

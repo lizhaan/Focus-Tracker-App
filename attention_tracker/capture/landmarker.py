@@ -1,4 +1,4 @@
-"""MediaPipe FaceLandmarker, Tasks API (MATH §0, PROJECT_PLAN §7.2)."""
+"""MediaPipe FaceLandmarker, Tasks API."""
 
 from __future__ import annotations
 

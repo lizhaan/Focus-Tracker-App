@@ -1,4 +1,4 @@
-"""Моделі даних та енуми (PROJECT_PLAN §7.1)."""
+"""Моделі даних та енуми"""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ from enum import Enum
 
 
 class FocusState(Enum):
-    """MATH §6."""
 
     FOCUSED = "FOCUSED"
     NOT_FOCUSED = "NOT_FOCUSED"
@@ -16,7 +15,6 @@ class FocusState(Enum):
 
 
 class Reason(Enum):
-    """MATH §4.3."""
 
     NONE = "NONE"
     GAZE_OUT = "GAZE_OUT"
@@ -27,7 +25,6 @@ class Reason(Enum):
 
 
 class PomodoroPhase(Enum):
-    """PROJECT_PLAN §10.4."""
 
     IDLE = "IDLE"
     WORK = "WORK"
@@ -37,7 +34,6 @@ class PomodoroPhase(Enum):
 
 @dataclass(frozen=True)
 class FrameFeatures:
-    """Сирі значення одного кадру (MATH §1–3.1). Кути — в градусах."""
 
     ts: float  # time.monotonic()
     valid: bool  # обличчя знайдено і solvePnP ok
@@ -51,7 +47,6 @@ class FrameFeatures:
 
     @classmethod
     def invalid(cls, ts: float) -> FrameFeatures:
-        """Кадр без обличчя або з невдалим solvePnP (MATH §4.1)."""
         return cls(
             ts=ts,
             valid=False,
@@ -67,7 +62,7 @@ class FrameFeatures:
 
 @dataclass(frozen=True)
 class DistractionResult:
-    """Вихід детектора (MATH §4.3)."""
+    """Вихід детектора."""
 
     ts: float
     distracted: bool
@@ -77,7 +72,6 @@ class DistractionResult:
 
 @dataclass(frozen=True)
 class StateChange:
-    """Перехід машини станів (MATH §6)."""
 
     ts: float
     old: FocusState
@@ -87,7 +81,6 @@ class StateChange:
 
 @dataclass(frozen=True)
 class FrameResult:
-    """Payload сигналу frame_processed (PROJECT_PLAN §5.3)."""
 
     features: FrameFeatures
     distraction: DistractionResult | None
