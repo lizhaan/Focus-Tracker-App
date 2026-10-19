@@ -13,20 +13,20 @@
 
 ## Структура
 
-Пакет `attention_tracker/` (повна цільова структура — `docs/PROJECT_PLAN.md` §6).
+Пакет `attention_tracker/`.
 Логіка (`vision/`, `focus/`, `calibration/`, `storage/`) — без Qt; Qt тільки в `workers/` і `ui/`.
 
 | Шлях | Зміст |
 |---|---|
 | `attention_tracker/main.py` | точка входу (зараз відкриває режим налагодження) |
-| `attention_tracker/config.py` | `AppConfig` — усі числові параметри (MATH §9) |
+| `attention_tracker/config.py` | `AppConfig` — усі числові параметри |
 | `attention_tracker/models.py` | енуми `FocusState`, `Reason`, `PomodoroPhase` і dataclass-и `FrameFeatures`, `DistractionResult`, `StateChange`, `FrameResult` |
 | `attention_tracker/assets/face_landmarker.task` | модель MediaPipe FaceLandmarker |
 | `attention_tracker/capture/camera.py` | `Camera` — вебкамера, мітки часу `time.monotonic()` |
 | `attention_tracker/capture/landmarker.py` | `FaceLandmarkerWrapper` — 478 landmark-ів (Tasks API) |
-| `attention_tracker/vision/landmarks.py` | індекси landmark-ів, 3D-модель обличчя (MATH §0.1, §2.1) |
-| `attention_tracker/vision/features.py` | EAR, Yaw/Pitch/Roll, Gaze_h/Gaze_v; `FeatureExtractor` (MATH §1–3.1) |
-| `attention_tracker/vision/filters.py` | median + EMA: `MedianEmaFilter`, `SignalFilter` (MATH §5) |
+| `attention_tracker/vision/landmarks.py` | індекси landmark-ів, 3D-модель обличчя |
+| `attention_tracker/vision/features.py` | EAR, Yaw/Pitch/Roll, Gaze_h/Gaze_v; `FeatureExtractor` |
+| `attention_tracker/vision/filters.py` | median + EMA: `MedianEmaFilter`, `SignalFilter` |
 | `attention_tracker/workers/pipeline_worker.py` | `PipelineWorker` (QThread): камера → landmarks → ознаки → фільтр |
 | `attention_tracker/ui/debug_view.py` | превʼю камери з landmark-ами та значеннями сигналів |
 | `attention_tracker/{calibration,focus,storage,session,platform}/` | заготовки для наступних кроків |
