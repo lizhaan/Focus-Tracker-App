@@ -8,7 +8,7 @@
 ## Документація
 
 - [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) — ідея, вимоги, архітектура, класи, етапи
-- [`docs/MATH.md`](docs/MATH.md) — формули, пороги, калібрування, машина станів (джерело правди)
+- [`docs/MATH.md`](docs/MATH.md) — формули, калібрування, машина станів 
 - [`docs/CLAUDE.md`](docs/CLAUDE.md) — правила розробки
 
 ## Структура
