@@ -55,11 +55,10 @@ class DistractionConfig:
 class AlphaThresholdsConfig:
     """Етап 2 п.3: тимчасові пороги без регресії.
 
-    gaze_out = |Gaze_h − gaze_h_center| > gaze_h_delta OR |ΔYaw| > yaw_delta_deg,
-    baseline береться з перших baseline_duration секунд сесії.
+    gaze_out = |Gaze_h − gaze_h_baseline| > gaze_h_delta OR |ΔYaw| > yaw_delta_deg,
+    обидва baseline беруться з перших baseline_duration секунд сесії.
     """
 
-    gaze_h_center: float = 0.5
     gaze_h_delta: float = 0.15
     yaw_delta_deg: float = 25.0
     baseline_duration: float = 2.0  # с
