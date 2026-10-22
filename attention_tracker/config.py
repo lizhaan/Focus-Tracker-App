@@ -95,6 +95,20 @@ class CalibrationConfig:
     min_valid_ratio: float = 0.70
     mad_k: float = 3.0
 
+    # цілі погляду, нормалізовані координати робочого монітора
+    center_target: tuple[float, float] = (0.5, 0.5)
+    grid_targets: tuple[tuple[float, float], ...] = (
+        (0.05, 0.05), (0.5, 0.05), (0.95, 0.05),
+        (0.05, 0.5), (0.95, 0.5),
+        (0.05, 0.95), (0.5, 0.95), (0.95, 0.95),
+    )
+    head_yaw_targets: tuple[tuple[float, float], ...] = ((0.05, 0.5), (0.5, 0.5), (0.95, 0.5))
+    head_pitch_targets: tuple[tuple[float, float], ...] = ((0.5, 0.05), (0.5, 0.5), (0.5, 0.95))
+    bottom_target: tuple[float, float] = (0.5, 0.97)
+    # точки перевірки якості: випадкові, не ближче min_dist до цілей навчання
+    check_point_range: tuple[float, float] = (0.15, 0.85)
+    check_point_min_dist: float = 0.1
+
     # крок 3: повороти голови
     head_yaw_range_deg: tuple[float, float] = (10.0, 25.0)
     head_pitch_range_deg: tuple[float, float] = (8.0, 20.0)
