@@ -9,11 +9,13 @@ import mediapipe  # noqa: F401
 from PySide6.QtWidgets import QApplication
 
 from attention_tracker.config import AppConfig
+from attention_tracker.platform.paths import APP_NAME
 from attention_tracker.ui.main_window import MainWindow
 
 
 def main() -> int:
     app = QApplication(sys.argv)
+    app.setApplicationName(APP_NAME)
     window = MainWindow(AppConfig())
     window.show()
     return app.exec()
