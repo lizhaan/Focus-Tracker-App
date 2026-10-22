@@ -70,6 +70,9 @@ class FocusOverlay(QWidget):
         """Стан, для якого плашка зараз показана (або з'являється); None — прихована."""
         return self._shown_state
 
+    def hide_overlay(self) -> None:
+        self._fade_out()
+
     def show_state(self, state: FocusState | None, progress: float | None) -> None:
         style = style_for(state)
         if style.overlay_text is None:

@@ -19,6 +19,8 @@ class StateStyle:
 
 
 IDLE_STYLE = StateStyle("#9e9e9e", "Сесію не запущено", None, False)
+BREAK_STYLE = StateStyle("#1e88e5", "Перерва", None, False)  # трекінг вимкнено
+PAUSE_STYLE = StateStyle("#78909c", "Пауза", None, False)  # ручна пауза, трекінг вимкнено
 
 STATE_STYLES: dict[FocusState, StateStyle] = {
     FocusState.FOCUSED: StateStyle("#2e7d32", "У фокусі", None, False),

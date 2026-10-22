@@ -68,6 +68,12 @@ class PipelineWorker(QThread):
         self._running = False
         self._lock = threading.Lock()
         self._pending_timings: tuple[float, float] | None = None
+        self._pending_tracking: bool | None = None
+
+    def set_tracking(self, active: bool) -> None:
+        """Перерва/ручна пауза (False) або робота (True); з наступного кадру."""
+        with self._lock:
+            self._pending_tracking = active
 
     def stop(self) -> None:
         self._running = False
@@ -102,13 +108,13 @@ class PipelineWorker(QThread):
         self._running = True
         try:
             while self._running:
-                self._apply_pending_timings(processor)
                 item = camera.read()
                 if item is None:
                     self.camera_error.emit("Не вдалося отримати кадр з камери")
                     break
                 frame, ts = item
                 h, w = frame.shape[:2]
+                self._apply_pending(processor, ts)
 
                 landmarks = landmarker.detect(frame, int(ts * _MS_PER_S))
                 if processor is None:
@@ -140,8 +146,14 @@ class PipelineWorker(QThread):
         if out.change is not None:
             self.state_changed.emit(out.change)
 
-    def _apply_pending_timings(self, processor: FrameProcessor | None) -> None:
+    def _apply_pending(self, processor: FrameProcessor | None, now: float) -> None:
+        """Зміни з UI-потоку (таймери, трекінг) — на початку обробки кадру."""
         with self._lock:
             timings, self._pending_timings = self._pending_timings, None
-        if timings is not None and processor is not None:
+            tracking, self._pending_tracking = self._pending_tracking, None
+        if processor is None:
+            return
+        if timings is not None:
             processor.set_timings(*timings)
+        if tracking is not None:
+            processor.set_tracking(tracking, now)

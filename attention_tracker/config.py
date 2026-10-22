@@ -66,6 +66,16 @@ class FocusConfig:
 
 
 @dataclass(frozen=True)
+class PomodoroConfig:
+    """Тривалості фаз Pomodoro, секунди."""
+
+    work: float = 25 * 60.0
+    short_break: float = 5 * 60.0
+    long_break: float = 15 * 60.0
+    pomodoros_before_long_break: int = 4
+
+
+@dataclass(frozen=True)
 class CalibrationConfig:
     """збір даних, пороги, регресія, перевірка якості."""
 
@@ -149,6 +159,7 @@ class AppConfig:
     filters: FilterConfig = field(default_factory=FilterConfig)
     distraction: DistractionConfig = field(default_factory=DistractionConfig)
     focus: FocusConfig = field(default_factory=FocusConfig)
+    pomodoro: PomodoroConfig = field(default_factory=PomodoroConfig)
     calibration: CalibrationConfig = field(default_factory=CalibrationConfig)
     metrics: MetricsConfig = field(default_factory=MetricsConfig)
     ui: UiConfig = field(default_factory=UiConfig)

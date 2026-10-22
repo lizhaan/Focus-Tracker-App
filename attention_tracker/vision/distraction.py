@@ -99,22 +99,23 @@ class DistractionDetector:
         d_pitch = wrap(smoothed.pitch - self._adj.pitch_baseline)
         point = self._screen_point(smoothed, d_yaw, d_pitch)
         gaze_out = point is not None and not self._update_on_screen(point)
-        head_down = self._profile.s_pitch * d_pitch > self._profile.pitch_threshold
+        pitch_down = self._profile.s_pitch * d_pitch
         eyes_low = (
             self._profile.ear_enabled
             and smoothed.ear is not None
             and smoothed.ear < self._profile.ear_threshold
         )
-        phone_head = self._head_down.update(head_down, now)
+        phone_head = self._head_down.update(pitch_down > self._profile.pitch_threshold, now)
         phone_eyes = self._eyes_low.update(eyes_low, now)
+        head = (d_yaw, d_pitch, pitch_down)
 
         if phone_head:
-            return self._result(now, True, Reason.PHONE_HEAD, point)
+            return self._result(now, True, Reason.PHONE_HEAD, point, head)
         if phone_eyes:
-            return self._result(now, True, Reason.PHONE_EYES, point)
+            return self._result(now, True, Reason.PHONE_EYES, point, head)
         if gaze_out:
-            return self._result(now, True, Reason.GAZE_OUT, point)
-        return self._result(now, False, Reason.NONE, point)
+            return self._result(now, True, Reason.GAZE_OUT, point, head)
+        return self._result(now, False, Reason.NONE, point, head)
 
     # --- внутрішнє ---------------------------------------------------------
 
@@ -154,7 +155,16 @@ class DistractionDetector:
         return self._on_screen
 
     def _result(
-        self, now: float, distracted: bool, reason: Reason, point: tuple[float, float] | None
+        self,
+        now: float,
+        distracted: bool,
+        reason: Reason,
+        point: tuple[float, float] | None,
+        head: tuple[float, float, float] | None = None,
     ) -> DistractionResult:
         self._last = (distracted, reason)
-        return DistractionResult(ts=now, distracted=distracted, reason=reason, screen_point=point)
+        d_yaw, d_pitch, pitch_down = head if head is not None else (None, None, None)
+        return DistractionResult(
+            ts=now, distracted=distracted, reason=reason, screen_point=point,
+            d_yaw=d_yaw, d_pitch=d_pitch, pitch_down=pitch_down,
+        )

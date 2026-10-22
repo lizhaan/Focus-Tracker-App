@@ -88,6 +88,27 @@ def test_long_face_absence_resets_filters(proc):
     assert out.result.features.yaw == pytest.approx(10.0)
 
 
+def test_tracking_off_during_break(proc):
+    run(proc, 0.0, 2.5)
+    proc.set_tracking(False, 2.5)
+    out, changes, _ = run(proc, 2.5, 8.0, sx=1.3)  # «перерва»: дивимось куди завгодно
+    assert changes == []
+    assert out.result.state is None
+    assert out.result.distraction is not None  # детектор працює далі (для Debug)
+
+
+def test_tracking_back_on_starts_focused(proc):
+    run(proc, 0.0, 2.5)
+    run(proc, 2.5, 7.0, sx=1.3)
+    assert proc.state_machine.state is FocusState.LOST_FOCUS
+    proc.set_tracking(False, 7.0)
+    run(proc, 7.0, 8.0)  # під час перерви кадри теж обробляються — фільтр оновлюється
+    proc.set_tracking(True, 8.0)
+    assert proc.state_machine.state is FocusState.FOCUSED
+    out, changes, _ = run(proc, 8.0, 9.0)
+    assert changes == [] and out.result.state is FocusState.FOCUSED
+
+
 def test_set_timings(proc):
     proc.set_timings(5.0, 1.0)
     assert (proc.state_machine.n, proc.state_machine.y) == (5.0, 1.0)

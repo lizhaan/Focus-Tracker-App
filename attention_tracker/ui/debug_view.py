@@ -12,6 +12,7 @@ from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QFont, QImage, QPixmap
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
+from attention_tracker.calibration.profile import CalibrationProfile
 from attention_tracker.models import FrameFeatures, FrameResult
 from attention_tracker.vision.landmarks import (
     HEAD_POSE_INDICES,
@@ -64,6 +65,7 @@ class DebugView(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._worker: PipelineWorker | None = None
+        self._profile: CalibrationProfile | None = None
         self._result: FrameResult | None = None
         self._fps: float | None = None
 
@@ -83,9 +85,10 @@ class DebugView(QWidget):
 
     # --- підключення до worker-а --------------------------------------------
 
-    def attach(self, worker: PipelineWorker) -> None:
+    def attach(self, worker: PipelineWorker, profile: CalibrationProfile | None = None) -> None:
         self.detach()
         self._worker = worker
+        self._profile = profile
         worker.debug_frame.connect(self._on_debug_frame)
         worker.frame_processed.connect(self._on_frame_processed)
         worker.fps_updated.connect(self._on_fps)
@@ -161,5 +164,14 @@ class DebugView(QWidget):
         point = d.screen_point if d is not None else None
         lines.append(f"sx       {_fmt(point[0] if point else None, 2):>8}")
         lines.append(f"sy       {_fmt(point[1] if point else None, 2):>8}")
+        lines.append(f"ΔYaw °   {_fmt(d.d_yaw if d else None, 1):>8}")
+        lines.append(f"ΔPitch ° {_fmt(d.d_pitch if d else None, 1):>8}")
+        p = self._profile
+        lines.append(
+            f"вниз °   {_fmt(d.pitch_down if d else None, 1):>8}"
+            f"  поріг {_fmt(p.pitch_threshold if p else None, 1)}"
+        )
+        if p is not None and p.ear_enabled:
+            lines.append(f"EAR поріг {_fmt(p.ear_threshold, 3, signed=False):>7}")
         lines.append(f"state    {(r_.state.name if r_ is not None and r_.state else '—')}")
         self._values.setText("\n".join(lines))

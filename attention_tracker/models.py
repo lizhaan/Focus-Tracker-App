@@ -68,6 +68,9 @@ class DistractionResult:
     distracted: bool
     reason: Reason
     screen_point: tuple[float, float] | None  # (sx, sy) на робочому моніторі
+    d_yaw: float | None = None  # відхилення від baseline сесії, градуси (для Debug)
+    d_pitch: float | None = None
+    pitch_down: float | None = None  # s_pitch · ΔPitch, > 0 — голова вниз
 
 
 @dataclass(frozen=True)

@@ -2,7 +2,8 @@
 
 Сесія починається з перецентрування (погляд у центр); поки воно триває,
 детектор і машина станів не оновлюються. Невдале перецентрування
-автоматично починається знову.
+автоматично починається знову. На перервах і ручній паузі трекінг вимкнено:
+детектор працює, машина станів — ні.
 
 Винесено з PipelineWorker, щоб покрити тестами без камери й потоків.
 """
@@ -40,6 +41,7 @@ class FrameProcessor:
         self._recenterer = Recenterer(cfg.calibration, profile)
         self._state_machine = FocusStateMachine(cfg.focus)
         self._recentering = False
+        self._tracking = True
 
     @property
     def state_machine(self) -> FocusStateMachine:
@@ -60,6 +62,17 @@ class FrameProcessor:
         self._recenterer.start(now)
         self._recentering = True
 
+    @property
+    def tracking(self) -> bool:
+        return self._tracking
+
+    def set_tracking(self, active: bool, now: float) -> None:
+        """Перерва або ручна пауза — машина станів не оновлюється; після — знову FOCUSED."""
+        if active and not self._tracking:
+            self._detector.reset(now)
+            self._state_machine.reset(now)
+        self._tracking = active
+
     def set_timings(self, n: float, y: float) -> None:
         self._state_machine.set_timings(n, y)
 
@@ -74,6 +87,9 @@ class FrameProcessor:
         distraction = self._detector.update(raw, smoothed)
         if self._detector.consume_filter_reset():
             self._filter.reset()
+        if not self._tracking:
+            result = FrameResult(features=smoothed, distraction=distraction, state=None, recovering_progress=None)
+            return ProcessOutput(raw, result, None)
         change = self._state_machine.update(distraction.distracted, distraction.reason, raw.ts)
         result = FrameResult(
             features=smoothed,

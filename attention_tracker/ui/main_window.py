@@ -1,18 +1,24 @@
-"""Головне вікно: робочий монітор і профіль калібрування, Старт/Стоп, індикатор стану,
-плашка, вкладка Debug.
+"""Головне вікно: робочий монітор і профіль калібрування, Pomodoro (Старт / Пауза /
+Стоп / Пропустити фазу), індикатор стану, плашка, вкладка Debug.
 
 Без дійсного профілю для робочого монітора кнопка «Старт» неактивна.
-Pomodoro, налаштування й історія — у наступних кроках.
+У робочій фазі LOST_FOCUS ставить таймер на автопаузу, повернення в
+FOCUSED після RECOVERING — знімає її. На перервах і ручній паузі трекінг вимкнено.
+Pomodoro можна вимкнути: тоді сесія — лише трекінг, а таймер рахує її тривалість.
+Налаштування й історія — у наступних кроках.
 """
 
 from __future__ import annotations
 
+import time
 from datetime import datetime
 from enum import Enum
 
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, QTimer, Slot
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
+    QApplication,
+    QCheckBox,
     QComboBox,
     QHBoxLayout,
     QLabel,
@@ -27,29 +33,59 @@ from attention_tracker.calibration.profile import CalibrationProfile
 from attention_tracker.calibration.recenter import RecenterResult
 from attention_tracker.capture.camera import camera_id_for
 from attention_tracker.config import AppConfig
-from attention_tracker.models import FocusState, FrameResult, StateChange
+from attention_tracker.focus.pomodoro import PomodoroEvent, PomodoroEventInfo, PomodoroTimer
+from attention_tracker.focus.stopwatch import Stopwatch
+from attention_tracker.models import FocusState, FrameResult, PomodoroPhase, StateChange
 from attention_tracker.platform.monitors import MonitorInfo, find_screen, list_monitors
 from attention_tracker.storage.storage import DEFAULT_USER, Storage
 from attention_tracker.ui.calibration_window import CalibrationWindow
 from attention_tracker.ui.debug_view import DebugView
 from attention_tracker.ui.overlay import FocusOverlay
 from attention_tracker.ui.recenter_window import RecenterWindow
-from attention_tracker.ui.state_style import style_for
+from attention_tracker.ui.state_style import BREAK_STYLE, PAUSE_STYLE, StateStyle, style_for
 from attention_tracker.workers.pipeline_worker import PipelineWorker, WorkerMode
 
 # Оформлення
-_WINDOW_SIZE = (960, 600)
+_WINDOW_SIZE = (960, 640)
 _INDICATOR_SIZE = 96
+_TIMER_STYLE = "font-size: 56px; font-weight: 600; font-family: Consolas, monospace;"
+_PHASE_STYLE = "font-size: 18px;"
 _LABEL_STYLE = "font-size: 26px; font-weight: 600;"
 _HINT_STYLE = "color: #757575; font-size: 14px;"
 _OK_STYLE = "color: #2e7d32;"
 _BAD_STYLE = "color: #c62828;"
 _RECENTER_HINT = "Дивіться на точку в центрі робочого монітора"
 _LARGE_SHIFT_HINT = "Положення сильно змінилось — рекомендуємо повне калібрування"
+_FREE_SESSION_NAME = "Без таймера"
+_MS_PER_S = 1000
+_SECONDS_PER_MINUTE = 60
+_SECONDS_PER_HOUR = 3600
+
+PHASE_NAMES: dict[PomodoroPhase, str] = {
+    PomodoroPhase.IDLE: "",
+    PomodoroPhase.WORK: "Робота",
+    PomodoroPhase.SHORT_BREAK: "Коротка перерва",
+    PomodoroPhase.LONG_BREAK: "Довга перерва",
+}
 
 # Ключі таблиці settings
 SETTING_WORK_MONITOR = "work_monitor"
 SETTING_FRAME_SIZE = "camera.frame_size"  # остання фактична роздільна здатність, "WxH"
+SETTING_POMODORO_ENABLED = "pomodoro.enabled"  # "1" / "0"
+
+
+def format_remaining(seconds: float) -> str:
+    """Залишок часу фази як ММ:СС (округлення вгору, щоб 0:00 було лише в кінці)."""
+    total = max(0, int(-(-seconds // 1)))
+    return f"{total // _SECONDS_PER_MINUTE:02d}:{total % _SECONDS_PER_MINUTE:02d}"
+
+
+def format_elapsed(seconds: float) -> str:
+    """Тривалість сесії: ММ:СС, від години — Г:ММ:СС."""
+    total = max(0, int(seconds))
+    hours, rest = divmod(total, _SECONDS_PER_HOUR)
+    minutes, secs = divmod(rest, _SECONDS_PER_MINUTE)
+    return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes:02d}:{secs:02d}"
 
 
 class ProfileStatus(Enum):
@@ -107,6 +143,23 @@ class MainWindow(QMainWindow):
         monitor_row.addWidget(self._monitor_box, 1)
         monitor_row.addWidget(self._calibrate)
 
+        # Pomodoro або секундомір сесії без таймера
+        self._pomodoro = PomodoroTimer(cfg.pomodoro, self._on_pomodoro_event)
+        self._stopwatch = Stopwatch()
+        self._use_pomodoro = storage.get_setting(SETTING_POMODORO_ENABLED, "1") == "1"
+        self._pomodoro_box = QCheckBox("Pomodoro-таймер")
+        self._pomodoro_box.setChecked(self._use_pomodoro)
+        self._pomodoro_box.toggled.connect(self._on_pomodoro_toggled)
+        self._timer_label = QLabel(format_remaining(cfg.pomodoro.work))
+        self._timer_label.setStyleSheet(_TIMER_STYLE)
+        self._timer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._phase_label = QLabel()
+        self._phase_label.setStyleSheet(_PHASE_STYLE)
+        self._phase_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._tick = QTimer(self)
+        self._tick.setInterval(int(cfg.ui.pomodoro_tick * _MS_PER_S))
+        self._tick.timeout.connect(self._on_tick)
+
         # стан сесії
         self._indicator = QLabel()
         self._indicator.setFixedSize(_INDICATOR_SIZE, _INDICATOR_SIZE)
@@ -119,20 +172,28 @@ class MainWindow(QMainWindow):
         self._hint.setWordWrap(True)
 
         self._start = QPushButton("Старт")
+        self._pause = QPushButton("Пауза")
         self._stop = QPushButton("Стоп")
+        self._skip = QPushButton("Пропустити фазу")
         self._start.clicked.connect(self.start_session)
+        self._pause.clicked.connect(self.toggle_pause)
         self._stop.clicked.connect(self.stop_session)
+        self._skip.clicked.connect(self.skip_phase)
         buttons = QHBoxLayout()
         buttons.addStretch(1)
-        buttons.addWidget(self._start)
-        buttons.addWidget(self._stop)
+        for button in (self._start, self._pause, self._stop, self._skip):
+            buttons.addWidget(button)
         buttons.addStretch(1)
 
         session = QWidget()
         col = QVBoxLayout(session)
         col.addLayout(monitor_row)
         col.addWidget(self._profile_label)
+        col.addWidget(self._pomodoro_box)
         col.addStretch(1)
+        col.addWidget(self._timer_label)
+        col.addWidget(self._phase_label)
+        col.addSpacing(12)
         col.addWidget(self._indicator, alignment=Qt.AlignmentFlag.AlignCenter)
         col.addWidget(self._state_label)
         col.addWidget(self._hint)
@@ -151,6 +212,7 @@ class MainWindow(QMainWindow):
         app.screenRemoved.connect(lambda _s: self.reload_monitors())
         self.reload_monitors()
         self._render_state(None)
+        self._update_timer()
 
     # --- монітор і профіль --------------------------------------------------
 
@@ -243,7 +305,7 @@ class MainWindow(QMainWindow):
         worker.state_changed.connect(self._on_state_changed)
         worker.camera_error.connect(self._on_camera_error)
         worker.finished.connect(self._on_worker_finished)
-        self._debug.attach(worker)
+        self._debug.attach(worker, profile)
         self._worker = worker
         self.statusBar().clearMessage()
         self._hint.setText(_RECENTER_HINT)
@@ -257,9 +319,37 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def stop_session(self) -> None:
+        self._pomodoro.stop(time.monotonic())
+        self._stopwatch.stop()
         if self._worker is not None:
             self._worker.stop()
             self._worker.wait()
+
+    @Slot()
+    def toggle_pause(self) -> None:
+        """Ручна пауза: таймер стоїть, трекінг вимкнено; «Продовжити» — знову «у фокусі»."""
+        now = time.monotonic()
+        if self._stopwatch.started:
+            if self._stopwatch.paused:
+                self._stopwatch.resume(now)
+            else:
+                self._stopwatch.pause(now)
+        elif self._pomodoro.paused_manual:
+            self._pomodoro.resume_manual(now)
+        else:
+            self._pomodoro.pause_manual(now)
+        self._apply_phase_view()
+
+    @Slot(bool)
+    def _on_pomodoro_toggled(self, checked: bool) -> None:
+        self._use_pomodoro = checked
+        self._storage.set_setting(SETTING_POMODORO_ENABLED, "1" if checked else "0")
+        self._update_timer()
+        self._update_buttons()
+
+    @Slot()
+    def skip_phase(self) -> None:
+        self._pomodoro.skip_phase(time.monotonic())
 
     @Slot(str, int, int)
     def _on_camera_opened(self, camera_id: str, frame_w: int, frame_h: int) -> None:
@@ -274,9 +364,15 @@ class MainWindow(QMainWindow):
     def _on_recenter_done(self, result: RecenterResult) -> None:
         self._close_recenter()
         self._hint.clear()
-        self._render_state(FocusState.FOCUSED)
         if result.large_shift:
             self.statusBar().showMessage(_LARGE_SHIFT_HINT)
+        now = time.monotonic()  # таймер іде з моменту, коли трекінг почався
+        if self._use_pomodoro:
+            self._pomodoro.start(now)
+        else:
+            self._stopwatch.start(now)
+            self._apply_phase_view()
+        self._tick.start()
 
     @Slot()
     def _on_recenter_retry(self) -> None:
@@ -291,11 +387,70 @@ class MainWindow(QMainWindow):
     @Slot()
     def _on_worker_finished(self) -> None:
         self._close_recenter()
+        self._pomodoro.stop(time.monotonic())
+        self._stopwatch.stop()
+        self._tick.stop()
         self._debug.detach()
         self._worker = None
         self._hint.clear()
         self._render_state(None)
+        self._update_timer()
         self._update_buttons()
+
+    # --- Pomodoro -----------------------------------------------------------
+
+    @Slot()
+    def _on_tick(self) -> None:
+        self._pomodoro.tick(time.monotonic())
+        self._update_timer()
+
+    def _on_pomodoro_event(self, info: PomodoroEventInfo) -> None:
+        if info.event is PomodoroEvent.PHASE_END:
+            QApplication.beep()
+        if info.event in (PomodoroEvent.PHASE_START, PomodoroEvent.STOP):
+            self._apply_phase_view()
+
+    def _session_started(self) -> bool:
+        """Трекінг сесії почався (після перецентрування) — з Pomodoro чи без."""
+        return self._pomodoro.phase is not PomodoroPhase.IDLE or self._stopwatch.started
+
+    def _paused_manual(self) -> bool:
+        return self._pomodoro.paused_manual or self._stopwatch.paused
+
+    def _apply_phase_view(self) -> None:
+        """Трекінг, індикатор і кнопки відповідно до фази та ручної паузи."""
+        tracking = self._tracking_active()
+        if self._worker is not None and self._session_started():
+            self._worker.set_tracking(tracking)
+        if tracking:
+            self._render_state(FocusState.FOCUSED)
+        elif self._paused_manual():
+            self._render_style(PAUSE_STYLE)
+        elif self._pomodoro.phase in (PomodoroPhase.SHORT_BREAK, PomodoroPhase.LONG_BREAK):
+            self._render_style(BREAK_STYLE)
+        self._update_timer()
+        self._update_buttons()
+
+    def _update_timer(self) -> None:
+        now = time.monotonic()
+        if self._stopwatch.started:
+            self._timer_label.setText(format_elapsed(self._stopwatch.elapsed(now)))
+            paused = "  ·  пауза" if self._stopwatch.paused else ""
+            self._phase_label.setText(_FREE_SESSION_NAME + paused)
+            return
+        phase = self._pomodoro.phase
+        if phase is PomodoroPhase.IDLE:
+            idle = format_remaining(self._cfg.pomodoro.work) if self._use_pomodoro else format_elapsed(0.0)
+            self._timer_label.setText(idle)
+            self._phase_label.setText("")
+            return
+        self._timer_label.setText(format_remaining(self._pomodoro.remaining(now)))
+        text = f"{PHASE_NAMES[phase]}  ·  помодоро: {self._pomodoro.completed_pomodoros}"
+        if self._pomodoro.paused_manual:
+            text += "  ·  пауза"
+        elif self._pomodoro.paused_auto:
+            text += "  ·  автопауза"
+        self._phase_label.setText(text)
 
     # --- сигнали worker-а -----------------------------------------------
 
@@ -306,7 +461,20 @@ class MainWindow(QMainWindow):
 
     @Slot(object)
     def _on_state_changed(self, change: StateChange) -> None:
+        if not self._tracking_active():
+            return  # кадр, оброблений до вимкнення трекінгу
+        now = time.monotonic()
+        if change.new is FocusState.LOST_FOCUS:
+            self._pomodoro.pause_auto(now)
+        elif change.new is FocusState.FOCUSED and change.old is FocusState.RECOVERING:
+            self._pomodoro.resume_auto(now)
         self._render_state(change.new)
+        self._update_timer()
+
+    def _tracking_active(self) -> bool:
+        if self._stopwatch.started:
+            return not self._stopwatch.paused
+        return self._pomodoro.phase is PomodoroPhase.WORK and not self._pomodoro.paused_manual
 
     @Slot(str)
     def _on_camera_error(self, message: str) -> None:
@@ -317,20 +485,28 @@ class MainWindow(QMainWindow):
 
     def _render_state(self, state: FocusState | None) -> None:
         self._state = state
-        style = style_for(state)
+        self._render_style(style_for(state))
+        self._overlay.show_state(state, None)
+
+    def _render_style(self, style: StateStyle) -> None:
         self._indicator.setStyleSheet(
             f"background-color: {style.color}; border-radius: {_INDICATOR_SIZE // 2}px;"
         )
         self._state_label.setText(style.label)
-        self._overlay.show_state(state, None)
+        if style.overlay_text is None:
+            self._overlay.hide_overlay()
 
     def _update_buttons(self) -> None:
         running = self._worker is not None
         calibrating = self._calibration is not None
         self._start.setEnabled(not running and not calibrating and self._profile_status is ProfileStatus.VALID)
+        self._pause.setEnabled(self._session_started())
+        self._pause.setText("Продовжити" if self._paused_manual() else "Пауза")
+        self._skip.setEnabled(self._pomodoro.phase is not PomodoroPhase.IDLE)
         self._stop.setEnabled(running)
         self._calibrate.setEnabled(not running and not calibrating)
         self._monitor_box.setEnabled(not running and not calibrating)
+        self._pomodoro_box.setEnabled(not running and not calibrating)
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt API)
         self.stop_session()

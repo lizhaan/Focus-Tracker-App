@@ -131,6 +131,105 @@ def test_recenter_window_cancel_and_finish(qapp):
     assert cancelled == [True]  # завершення — не скасування
 
 
+@pytest.mark.parametrize(
+    "seconds, text", [(1500.0, "25:00"), (59.2, "01:00"), (0.4, "00:01"), (0.0, "00:00"), (-3.0, "00:00")]
+)
+def test_format_remaining(seconds, text):
+    from attention_tracker.ui.main_window import format_remaining
+
+    assert format_remaining(seconds) == text
+
+
+def test_pomodoro_controls_without_camera(main_window):
+    import time
+
+    from attention_tracker.models import PomodoroPhase
+    from attention_tracker.ui.state_style import BREAK_STYLE, PAUSE_STYLE
+
+    window, _ = main_window
+    assert not window._pause.isEnabled() and not window._skip.isEnabled()
+    window._pomodoro.start(time.monotonic())
+    assert window._pause.isEnabled() and window._skip.isEnabled()
+    assert window._state_label.text() == "У фокусі"
+    assert "Робота" in window._phase_label.text()
+    assert window._timer_label.text() == "25:00"
+
+    window.toggle_pause()
+    assert window._state_label.text() == PAUSE_STYLE.label
+    assert window._pause.text() == "Продовжити"
+    window.toggle_pause()
+    assert window._state_label.text() == "У фокусі"
+
+    window.skip_phase()
+    assert window._pomodoro.phase is PomodoroPhase.SHORT_BREAK
+    assert window._state_label.text() == BREAK_STYLE.label
+    assert window._overlay.shown_state is None
+
+
+@pytest.mark.parametrize(
+    "seconds, text", [(0.0, "00:00"), (59.9, "00:59"), (754.0, "12:34"), (3725.0, "1:02:05")]
+)
+def test_format_elapsed(seconds, text):
+    from attention_tracker.ui.main_window import format_elapsed
+
+    assert format_elapsed(seconds) == text
+
+
+def test_session_without_pomodoro(main_window):
+    import time
+
+    from attention_tracker.models import PomodoroPhase
+    from attention_tracker.ui.main_window import SETTING_POMODORO_ENABLED
+    from attention_tracker.ui.state_style import PAUSE_STYLE
+
+    window, storage = main_window
+    assert window._pomodoro_box.isChecked()  # за замовчуванням Pomodoro увімкнено
+    window._pomodoro_box.setChecked(False)
+    assert storage.get_setting(SETTING_POMODORO_ENABLED) == "0"
+    assert window._timer_label.text() == "00:00"
+
+    window._stopwatch.start(time.monotonic())  # як після перецентрування
+    window._apply_phase_view()
+    assert window._pomodoro.phase is PomodoroPhase.IDLE
+    assert window._state_label.text() == "У фокусі"
+    assert window._phase_label.text() == "Без таймера"
+    assert window._pause.isEnabled() and not window._skip.isEnabled()
+
+    window.toggle_pause()
+    assert window._state_label.text() == PAUSE_STYLE.label
+    assert "пауза" in window._phase_label.text()
+    window.toggle_pause()
+    assert window._state_label.text() == "У фокусі"
+
+
+def test_pomodoro_choice_is_remembered(qapp):
+    from attention_tracker.storage.storage import Storage
+    from attention_tracker.ui.main_window import SETTING_POMODORO_ENABLED, MainWindow
+
+    storage = Storage(":memory:")
+    storage.set_setting(SETTING_POMODORO_ENABLED, "0")
+    window = MainWindow(AppConfig(), storage)
+    assert not window._pomodoro_box.isChecked()
+    window.close()
+    storage.close()
+
+
+def test_lost_focus_auto_pauses_pomodoro(main_window):
+    import time
+
+    from attention_tracker.models import FocusState, Reason, StateChange
+
+    window, _ = main_window
+    window._pomodoro.start(time.monotonic())
+    window._on_state_changed(StateChange(0.0, FocusState.NOT_FOCUSED, FocusState.LOST_FOCUS, Reason.GAZE_OUT))
+    assert window._pomodoro.paused_auto
+    assert "автопауза" in window._phase_label.text()
+    window._on_state_changed(StateChange(1.0, FocusState.LOST_FOCUS, FocusState.RECOVERING, Reason.NONE))
+    assert window._pomodoro.paused_auto  # RECOVERING — таймер ще стоїть
+    window._on_state_changed(StateChange(2.0, FocusState.RECOVERING, FocusState.FOCUSED, Reason.NONE))
+    assert not window._pomodoro.paused
+
+
 def test_profile_status_texts():
     from attention_tracker.ui.main_window import ProfileStatus, profile_status
     from tests.test_storage import make_profile
