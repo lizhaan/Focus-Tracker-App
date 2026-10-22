@@ -1,12 +1,14 @@
-"""PipelineWorker (QThread): камера → landmarker → features → filter.
+"""PipelineWorker (QThread): камера → landmarker → FrameProcessor → Qt-сигнали.
 
-Етап 2, крок 1: тільки ознаки для debug_view. Детектор і машина станів
-додаються в кроках 3–4. Назовні — тільки Qt-сигнали; у БД нічого не пише.
-Кадри передаються лише в памʼяті для превʼю і ніде не зберігаються.
+Один запуск потоку — одна сесія: камера вмикається в run() і звільняється
+після stop(). Назовні — тільки Qt-сигнали; у БД нічого не пише. Кадри
+передаються лише в памʼяті для превʼю і ніде не зберігаються.
 """
 
 from __future__ import annotations
 
+import threading
+import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -15,9 +17,8 @@ from PySide6.QtCore import QThread, Signal
 from attention_tracker.capture.camera import Camera, CameraError
 from attention_tracker.capture.landmarker import FaceLandmarkerWrapper
 from attention_tracker.config import AppConfig
-from attention_tracker.models import FrameFeatures, FrameResult
-from attention_tracker.vision.features import FeatureExtractor
-from attention_tracker.vision.filters import SignalFilter
+from attention_tracker.models import FrameFeatures
+from attention_tracker.workers.frame_processor import FrameProcessor
 
 _MS_PER_S = 1000.0
 
@@ -32,7 +33,8 @@ class DebugFrame:
 
 
 class PipelineWorker(QThread):
-    frame_processed = Signal(object)  # FrameResult (ознаки після SignalFilter)
+    frame_processed = Signal(object)  # FrameResult
+    state_changed = Signal(object)  # StateChange
     debug_frame = Signal(object)  # DebugFrame
     camera_error = Signal(str)
     fps_updated = Signal(float)
@@ -41,9 +43,19 @@ class PipelineWorker(QThread):
         super().__init__(parent)
         self._cfg = cfg
         self._running = False
+        self._lock = threading.Lock()
+        self._pending_timings: tuple[float, float] | None = None
 
     def stop(self) -> None:
         self._running = False
+
+    def set_timings(self, n: float, y: float) -> None:
+        """Можна викликати з UI-потоку; застосовується з наступного кадру."""
+        focus = self._cfg.focus
+        if not (focus.n_min <= n <= focus.n_max and focus.y_min <= y <= focus.y_max):
+            raise ValueError(f"n={n}, y={y} поза допустимими межами")  # не валимо потік
+        with self._lock:
+            self._pending_timings = (n, y)
 
     def run(self) -> None:
         camera = Camera(self._cfg.camera)
@@ -55,13 +67,14 @@ class PipelineWorker(QThread):
             self.camera_error.emit(str(exc))
             return
 
-        extractor = FeatureExtractor()
-        signal_filter = SignalFilter(self._cfg.filters)
+        processor = FrameProcessor(self._cfg)
+        processor.start_session(time.monotonic())
         fps_window_start: float | None = None
         fps_frames = 0
         self._running = True
         try:
             while self._running:
+                self._apply_pending_timings(processor)
                 item = camera.read()
                 if item is None:
                     self.camera_error.emit("Не вдалося отримати кадр з камери")
@@ -70,9 +83,10 @@ class PipelineWorker(QThread):
                 h, w = frame.shape[:2]
 
                 landmarks = landmarker.detect(frame, int(ts * _MS_PER_S))
-                raw = extractor.extract(landmarks, ts, w, h)
-                smoothed = signal_filter.update(raw)
-                self.frame_processed.emit(FrameResult(smoothed, None, None, None))
+                raw, result, change = processor.process(landmarks, ts, w, h)
+                self.frame_processed.emit(result)
+                if change is not None:
+                    self.state_changed.emit(change)
                 self.debug_frame.emit(DebugFrame(frame, landmarks, raw))
 
                 if fps_window_start is None:
@@ -85,3 +99,9 @@ class PipelineWorker(QThread):
         finally:
             landmarker.close()
             camera.release()
+
+    def _apply_pending_timings(self, processor: FrameProcessor) -> None:
+        with self._lock:
+            timings, self._pending_timings = self._pending_timings, None
+        if timings is not None:
+            processor.set_timings(*timings)

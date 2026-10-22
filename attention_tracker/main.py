@@ -1,7 +1,4 @@
-"""Точка входу: `python -m attention_tracker.main`.
-
-Етап 2, крок 1: відкриває тільки режим налагодження.
-"""
+"""Точка входу: `python -m attention_tracker.main`."""
 
 from __future__ import annotations
 
@@ -12,14 +9,13 @@ import mediapipe  # noqa: F401
 from PySide6.QtWidgets import QApplication
 
 from attention_tracker.config import AppConfig
-from attention_tracker.ui.debug_view import DebugView
+from attention_tracker.ui.main_window import MainWindow
 
 
 def main() -> int:
     app = QApplication(sys.argv)
-    view = DebugView(AppConfig())
-    view.setWindowTitle("Attention Tracker — Debug")
-    view.show()
+    window = MainWindow(AppConfig())
+    window.show()
     return app.exec()
 
 
