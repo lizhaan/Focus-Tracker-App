@@ -149,6 +149,8 @@ class UiConfig:
     fps_report_interval: float = 1.0  # с
     pomodoro_tick: float = 1.0  # с
     overlay_fade_ms: int = 200
+    calibration_countdown: float = 3.0  # с, відлік перед кроком з новою інструкцією
+    calibration_lead_in: float = 1.0  # с, пауза перед наступною точкою того ж кроку
 
 
 @dataclass(frozen=True)

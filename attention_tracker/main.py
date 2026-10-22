@@ -9,16 +9,18 @@ import mediapipe  # noqa: F401
 from PySide6.QtWidgets import QApplication
 
 from attention_tracker.config import AppConfig
-from attention_tracker.platform.paths import APP_NAME
+from attention_tracker.platform.paths import APP_NAME, default_db_path
+from attention_tracker.storage.storage import Storage
 from attention_tracker.ui.main_window import MainWindow
 
 
 def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
-    window = MainWindow(AppConfig())
-    window.show()
-    return app.exec()
+    with Storage(default_db_path()) as storage:
+        window = MainWindow(AppConfig(), storage)
+        window.show()
+        return app.exec()
 
 
 if __name__ == "__main__":

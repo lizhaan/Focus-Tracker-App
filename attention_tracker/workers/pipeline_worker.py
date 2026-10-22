@@ -1,6 +1,6 @@
-"""PipelineWorker (QThread): камера → landmarker → FrameProcessor → Qt-сигнали.
+"""PipelineWorker (QThread): камера → landmarker → ознаки / FrameProcessor → Qt-сигнали.
 
-Один запуск потоку — одна сесія: камера вмикається в run() і звільняється
+Один запуск потоку — одна сесія або одне калібрування: камера вмикається в run() і звільняється
 після stop(). Назовні — тільки Qt-сигнали; у БД нічого не пише. Кадри
 передаються лише в памʼяті для превʼю і ніде не зберігаються.
 """
@@ -10,6 +10,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass
+from enum import Enum
 
 import numpy as np
 from PySide6.QtCore import QThread, Signal
@@ -18,6 +19,7 @@ from attention_tracker.capture.camera import Camera, CameraError
 from attention_tracker.capture.landmarker import FaceLandmarkerWrapper
 from attention_tracker.config import AppConfig
 from attention_tracker.models import FrameFeatures
+from attention_tracker.vision.features import FeatureExtractor
 from attention_tracker.workers.frame_processor import FrameProcessor
 
 _MS_PER_S = 1000.0
@@ -32,16 +34,26 @@ class DebugFrame:
     raw: FrameFeatures
 
 
+class WorkerMode(Enum):
+    CALIBRATION = "CALIBRATION"  # тільки сирі ознаки для майстра калібрування
+    SESSION = "SESSION"  # повний пайплайн з детектором і машиною станів
+
+
 class PipelineWorker(QThread):
-    frame_processed = Signal(object)  # FrameResult
-    state_changed = Signal(object)  # StateChange
+    camera_opened = Signal(str, int, int)  # camera_id, ширина, висота кадру
+    frame_processed = Signal(object)  # FrameResult (SESSION)
+    state_changed = Signal(object)  # StateChange (SESSION)
+    calibration_sample = Signal(object)  # сирі FrameFeatures (CALIBRATION)
     debug_frame = Signal(object)  # DebugFrame
     camera_error = Signal(str)
     fps_updated = Signal(float)
 
-    def __init__(self, cfg: AppConfig, parent: object | None = None) -> None:
+    def __init__(
+        self, cfg: AppConfig, mode: WorkerMode = WorkerMode.SESSION, parent: object | None = None
+    ) -> None:
         super().__init__(parent)
         self._cfg = cfg
+        self._mode = mode
         self._running = False
         self._lock = threading.Lock()
         self._pending_timings: tuple[float, float] | None = None
@@ -67,6 +79,10 @@ class PipelineWorker(QThread):
             self.camera_error.emit(str(exc))
             return
 
+        w, h = camera.frame_size
+        self.camera_opened.emit(camera.camera_id, w, h)
+        calibrating = self._mode is WorkerMode.CALIBRATION
+        extractor = FeatureExtractor()
         processor = FrameProcessor(self._cfg)
         processor.start_session(time.monotonic())
         fps_window_start: float | None = None
@@ -83,10 +99,14 @@ class PipelineWorker(QThread):
                 h, w = frame.shape[:2]
 
                 landmarks = landmarker.detect(frame, int(ts * _MS_PER_S))
-                raw, result, change = processor.process(landmarks, ts, w, h)
-                self.frame_processed.emit(result)
-                if change is not None:
-                    self.state_changed.emit(change)
+                if calibrating:
+                    raw = extractor.extract(landmarks, ts, w, h)
+                    self.calibration_sample.emit(raw)  # сирі, без згладжування
+                else:
+                    raw, result, change = processor.process(landmarks, ts, w, h)
+                    self.frame_processed.emit(result)
+                    if change is not None:
+                        self.state_changed.emit(change)
                 self.debug_frame.emit(DebugFrame(frame, landmarks, raw))
 
                 if fps_window_start is None:

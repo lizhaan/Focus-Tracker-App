@@ -1,14 +1,13 @@
 """Плашка поверх усіх вікон у LOST_FOCUS / RECOVERING.
 
 Не забирає фокус введення і пропускає кліки мишею крізь себе.
-Показується вгорі по центру основного монітора (вибір робочого монітора —
-у наступному етапі), з'являється і зникає плавно.
+Показується вгорі по центру робочого монітора, з'являється і зникає плавно.
 """
 
 from __future__ import annotations
 
 from PySide6.QtCore import QPropertyAnimation, Qt
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QGuiApplication, QScreen
 from PySide6.QtWidgets import QLabel, QProgressBar, QVBoxLayout, QWidget
 
 from attention_tracker.models import FocusState
@@ -64,6 +63,7 @@ class FocusOverlay(QWidget):
         self._fade.setDuration(fade_ms)
         self._fade.finished.connect(self._on_fade_finished)
         self._shown_state: FocusState | None = None
+        self._screen: QScreen | None = None
 
     @property
     def shown_state(self) -> FocusState | None:
@@ -110,8 +110,12 @@ class FocusOverlay(QWidget):
         if self._shown_state is None:
             self.hide()
 
+    def set_screen(self, screen: QScreen | None) -> None:
+        """Робочий монітор; None — основний."""
+        self._screen = screen
+
     def _place_on_screen(self) -> None:
-        screen = QGuiApplication.primaryScreen()
+        screen = self._screen or QGuiApplication.primaryScreen()
         if screen is None:
             return
         area = screen.availableGeometry()

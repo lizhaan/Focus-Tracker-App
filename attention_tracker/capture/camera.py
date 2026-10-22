@@ -18,6 +18,11 @@ class CameraError(RuntimeError):
     """Камеру не вдалося відкрити."""
 
 
+def camera_id_for(index: int) -> str:
+    """Ідентифікатор камери в профілі: індекс пристрою (разом із роздільною здатністю кадру)."""
+    return f"index:{index}"
+
+
 class Camera:
     def __init__(self, cfg: CameraConfig) -> None:
         self._cfg = cfg
@@ -30,8 +35,7 @@ class Camera:
 
     @property
     def camera_id(self) -> str | None:
-        """Ідентифікатор камери для профілю (поки що — індекс пристрою)."""
-        return None if self._index is None else f"index:{self._index}"
+        return None if self._index is None else camera_id_for(self._index)
 
     @property
     def frame_size(self) -> tuple[int, int] | None:
