@@ -14,12 +14,13 @@ import time
 from datetime import datetime
 from enum import Enum
 
-from PySide6.QtCore import Qt, QTimer, Slot
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtCore import QPointF, Qt, QTimer, Slot
+from PySide6.QtGui import QColor, QGuiApplication
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -38,22 +39,28 @@ from attention_tracker.focus.stopwatch import Stopwatch
 from attention_tracker.models import FocusState, FrameResult, PomodoroPhase, StateChange
 from attention_tracker.platform.monitors import MonitorInfo, find_screen, list_monitors
 from attention_tracker.storage.storage import DEFAULT_USER, Storage
+from attention_tracker.storage.user_settings import (
+    UserSettings,
+    apply_settings,
+    load_settings,
+    save_settings,
+    validate,
+)
 from attention_tracker.ui.calibration_window import CalibrationWindow
 from attention_tracker.ui.debug_view import DebugView
 from attention_tracker.ui.overlay import FocusOverlay
 from attention_tracker.ui.recenter_window import RecenterWindow
+from attention_tracker.ui.settings_view import SettingsView
 from attention_tracker.ui.state_style import BREAK_STYLE, PAUSE_STYLE, StateStyle, style_for
 from attention_tracker.workers.pipeline_worker import PipelineWorker, WorkerMode
 
 # Оформлення
-_WINDOW_SIZE = (960, 640)
-_INDICATOR_SIZE = 96
-_TIMER_STYLE = "font-size: 56px; font-weight: 600; font-family: Consolas, monospace;"
-_PHASE_STYLE = "font-size: 18px;"
-_LABEL_STYLE = "font-size: 26px; font-weight: 600;"
-_HINT_STYLE = "color: #757575; font-size: 14px;"
-_OK_STYLE = "color: #2e7d32;"
-_BAD_STYLE = "color: #c62828;"
+_WINDOW_SIZE = (720, 760)
+_INDICATOR_SIZE = 136
+_GLOW_BLUR = 48
+_GLOW_ALPHA = 110
+_BUTTON_MIN_WIDTH = 84
+_SECTION_SPACING = 16
 _RECENTER_HINT = "Дивіться на точку в центрі робочого монітора"
 _LARGE_SHIFT_HINT = "Положення сильно змінилось — рекомендуємо повне калібрування"
 _FREE_SESSION_NAME = "Без таймера"
@@ -103,7 +110,7 @@ def profile_status(
     if not profile.is_valid_for(monitor_id, camera_id, *frame_size):
         return ProfileStatus.INVALID, "Профіль недійсний (змінилась камера або роздільна здатність) — відкалібруйте знову"
     date = profile.created_at.replace("T", " ")[:16]
-    return ProfileStatus.VALID, f"✔ Відкалібровано {date}, похибка {profile.calib_error:.3f}"
+    return ProfileStatus.VALID, f"✓ Відкалібровано {date}, похибка {profile.calib_error:.3f}"
 
 
 def _parse_size(text: str | None) -> tuple[int, int] | None:
@@ -116,6 +123,9 @@ def _parse_size(text: str | None) -> tuple[int, int] | None:
 class MainWindow(QMainWindow):
     def __init__(self, cfg: AppConfig, storage: Storage) -> None:
         super().__init__()
+        self._base_cfg = cfg  # стандартні значення
+        self._settings = load_settings(storage, cfg)
+        cfg = apply_settings(cfg, self._settings)  # з урахуванням налаштувань користувача
         self._cfg = cfg
         self._storage = storage
         self._user_id = storage.ensure_user(DEFAULT_USER, datetime.now().isoformat(timespec="seconds"))
@@ -130,6 +140,8 @@ class MainWindow(QMainWindow):
 
         self._overlay = FocusOverlay(cfg.ui.overlay_fade_ms)
         self._debug = DebugView()
+        self._settings_view = SettingsView(self._base_cfg, self._settings)
+        self._settings_view.settings_changed.connect(self._on_settings_changed)
 
         # робочий монітор і профіль
         self._monitor_box = QComboBox()
@@ -150,11 +162,9 @@ class MainWindow(QMainWindow):
         self._pomodoro_box = QCheckBox("Pomodoro-таймер")
         self._pomodoro_box.setChecked(self._use_pomodoro)
         self._pomodoro_box.toggled.connect(self._on_pomodoro_toggled)
-        self._timer_label = QLabel(format_remaining(cfg.pomodoro.work))
-        self._timer_label.setStyleSheet(_TIMER_STYLE)
+        self._timer_label = QLabel(format_remaining(cfg.pomodoro.work), objectName="timer")
         self._timer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._phase_label = QLabel()
-        self._phase_label.setStyleSheet(_PHASE_STYLE)
+        self._phase_label = QLabel(objectName="phase")
         self._phase_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._tick = QTimer(self)
         self._tick.setInterval(int(cfg.ui.pomodoro_tick * _MS_PER_S))
@@ -163,11 +173,11 @@ class MainWindow(QMainWindow):
         # стан сесії
         self._indicator = QLabel()
         self._indicator.setFixedSize(_INDICATOR_SIZE, _INDICATOR_SIZE)
-        self._state_label = QLabel()
-        self._state_label.setStyleSheet(_LABEL_STYLE)
+        self._glow = QGraphicsDropShadowEffect(self._indicator, blurRadius=_GLOW_BLUR, offset=QPointF(0, 0))
+        self._indicator.setGraphicsEffect(self._glow)
+        self._state_label = QLabel(objectName="stateLabel")
         self._state_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._hint = QLabel()
-        self._hint.setStyleSheet(_HINT_STYLE)
+        self._hint = QLabel(objectName="sessionHint")
         self._hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._hint.setWordWrap(True)
 
@@ -179,29 +189,38 @@ class MainWindow(QMainWindow):
         self._pause.clicked.connect(self.toggle_pause)
         self._stop.clicked.connect(self.stop_session)
         self._skip.clicked.connect(self.skip_phase)
-        buttons = QHBoxLayout()
-        buttons.addStretch(1)
-        for button in (self._start, self._pause, self._stop, self._skip):
-            buttons.addWidget(button)
-        buttons.addStretch(1)
+        main_buttons = QHBoxLayout()
+        main_buttons.addStretch(1)
+        for button in (self._start, self._pause, self._stop):
+            button.setMinimumWidth(_BUTTON_MIN_WIDTH)
+            main_buttons.addWidget(button)
+        main_buttons.addStretch(1)
+        skip_row = QHBoxLayout()
+        skip_row.addStretch(1)
+        skip_row.addWidget(self._skip)
+        skip_row.addStretch(1)
 
         session = QWidget()
         col = QVBoxLayout(session)
+        col.setContentsMargins(24, 20, 24, 24)
         col.addLayout(monitor_row)
         col.addWidget(self._profile_label)
         col.addWidget(self._pomodoro_box)
         col.addStretch(1)
         col.addWidget(self._timer_label)
         col.addWidget(self._phase_label)
-        col.addSpacing(12)
+        col.addSpacing(_SECTION_SPACING * 2)
         col.addWidget(self._indicator, alignment=Qt.AlignmentFlag.AlignCenter)
+        col.addSpacing(_SECTION_SPACING)
         col.addWidget(self._state_label)
         col.addWidget(self._hint)
         col.addStretch(1)
-        col.addLayout(buttons)
+        col.addLayout(main_buttons)
+        col.addLayout(skip_row)
 
         tabs = QTabWidget()
         tabs.addTab(session, "Сесія")
+        tabs.addTab(self._settings_view, "Налаштування")
         tabs.addTab(self._debug, "Debug")
         self.setCentralWidget(tabs)
 
@@ -262,7 +281,10 @@ class MainWindow(QMainWindow):
             profile, monitor.monitor_id if monitor else "", self._camera_id, self._frame_size()
         )
         self._profile_label.setText(text)
-        self._profile_label.setStyleSheet(_OK_STYLE if self._profile_status is ProfileStatus.VALID else _BAD_STYLE)
+        valid = self._profile_status is ProfileStatus.VALID
+        self._profile_label.setObjectName("profileOk" if valid else "profileBad")
+        self._profile_label.style().unpolish(self._profile_label)  # перечитати стиль за новим іменем
+        self._profile_label.style().polish(self._profile_label)
         self._update_buttons()
 
     @Slot()
@@ -340,6 +362,26 @@ class MainWindow(QMainWindow):
             self._pomodoro.pause_manual(now)
         self._apply_phase_view()
 
+    @Slot(object)
+    def _on_settings_changed(self, settings: UserSettings) -> None:
+        """Зберегти й застосувати одразу; n і y — зокрема в поточній сесії."""
+        settings = validate(settings, self._base_cfg)
+        camera_changed = (settings.camera_index, settings.camera_resolution) != (
+            self._settings.camera_index, self._settings.camera_resolution
+        )
+        self._settings = settings
+        save_settings(self._storage, settings)
+        self._cfg = apply_settings(self._base_cfg, settings)
+        self._pomodoro.set_config(self._cfg.pomodoro)
+        if self._worker is not None:
+            self._worker.set_timings(settings.n, settings.y)
+        if camera_changed:
+            self._camera_id = camera_id_for(settings.camera_index)
+            w, h = settings.camera_resolution
+            self._storage.set_setting(SETTING_FRAME_SIZE, f"{w}x{h}")  # фактичну перевіримо на старті
+            self.refresh_profile()
+        self._update_timer()
+
     @Slot(bool)
     def _on_pomodoro_toggled(self, checked: bool) -> None:
         self._use_pomodoro = checked
@@ -406,7 +448,8 @@ class MainWindow(QMainWindow):
 
     def _on_pomodoro_event(self, info: PomodoroEventInfo) -> None:
         if info.event is PomodoroEvent.PHASE_END:
-            QApplication.beep()
+            if self._cfg.pomodoro.sound:
+                QApplication.beep()
         if info.event in (PomodoroEvent.PHASE_START, PomodoroEvent.STOP):
             self._apply_phase_view()
 
@@ -492,6 +535,9 @@ class MainWindow(QMainWindow):
         self._indicator.setStyleSheet(
             f"background-color: {style.color}; border-radius: {_INDICATOR_SIZE // 2}px;"
         )
+        glow = QColor(style.color)
+        glow.setAlpha(_GLOW_ALPHA)
+        self._glow.setColor(glow)
         self._state_label.setText(style.label)
         if style.overlay_text is None:
             self._overlay.hide_overlay()
@@ -506,6 +552,7 @@ class MainWindow(QMainWindow):
         self._stop.setEnabled(running)
         self._calibrate.setEnabled(not running and not calibrating)
         self._monitor_box.setEnabled(not running and not calibrating)
+        self._settings_view.set_camera_editable(not running and not calibrating)
         self._pomodoro_box.setEnabled(not running and not calibrating)
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt API)

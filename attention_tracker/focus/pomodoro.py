@@ -48,6 +48,10 @@ class PomodoroTimer:
         self._paused_auto = False
         self._paused_manual = False
 
+    def set_config(self, cfg: PomodoroConfig) -> None:
+        """Нові тривалості діють одразу, зокрема для поточної фази."""
+        self._cfg = cfg
+
     # --- стан ------------------------------------------------------------------
 
     @property

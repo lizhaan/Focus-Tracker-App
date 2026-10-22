@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parent.parent
     ["attention_tracker.main", "attention_tracker.ui.debug_view",
      "attention_tracker.ui.main_window", "attention_tracker.ui.overlay",
      "attention_tracker.ui.calibration_window", "attention_tracker.ui.recenter_window",
+     "attention_tracker.ui.settings_view",
      "attention_tracker.workers.pipeline_worker"],
 )
 def test_module_imports_in_clean_interpreter(module):

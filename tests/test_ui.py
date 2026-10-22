@@ -230,6 +230,72 @@ def test_lost_focus_auto_pauses_pomodoro(main_window):
     assert not window._pomodoro.paused
 
 
+def test_settings_view_emits_and_resets(qapp):
+    from attention_tracker.storage.user_settings import UserSettings
+    from attention_tracker.ui.settings_view import SettingsView
+
+    defaults = UserSettings.defaults(AppConfig())
+    view = SettingsView(AppConfig(), dataclasses.replace(defaults, n=7.0))
+    received = []
+    view.settings_changed.connect(received.append)
+    assert view.settings().n == 7.0
+    view._y.setValue(4.5)
+    assert received[-1].y == 4.5 and received[-1].n == 7.0
+    view.reset_to_defaults()
+    assert received[-1] == defaults
+    view.set_camera_editable(False)
+    assert not view._camera_index.isEnabled() and not view._resolution.isEnabled()
+
+
+def test_settings_change_applies_and_persists(main_window):
+    from attention_tracker.storage.user_settings import load_settings
+    from attention_tracker.ui.main_window import ProfileStatus
+
+    window, storage = main_window
+    view = window._settings_view
+    view._work.setValue(50)
+    assert window._cfg.pomodoro.work == 3000.0
+    assert window._timer_label.text() == "50:00"
+    assert load_settings(storage, AppConfig()).work_minutes == 50
+
+    view._n.setValue(6.0)
+    assert window._cfg.focus.n == 6.0
+
+    view._camera_index.setValue(1)
+    assert window._camera_id == "index:1"
+    assert window.profile_state is ProfileStatus.MISSING
+
+
+def test_saved_settings_used_on_start(qapp):
+    from attention_tracker.storage.storage import Storage
+    from attention_tracker.storage.user_settings import KEY_WORK
+    from attention_tracker.ui.main_window import MainWindow
+
+    storage = Storage(":memory:")
+    storage.set_setting(KEY_WORK, "45")
+    window = MainWindow(AppConfig(), storage)
+    assert window._cfg.pomodoro.work == 2700.0
+    assert window._timer_label.text() == "45:00"
+    assert window._settings_view.settings().work_minutes == 45
+    window.close()
+    storage.close()
+
+
+def test_theme_assets_exist_and_apply(qapp):
+    import re
+    from pathlib import Path
+
+    from attention_tracker.ui.theme import STYLESHEET, apply_theme, camera_icon, eye_icon, timer_icon
+
+    for path in re.findall(r"url\(([^)]+)\)", STYLESHEET):
+        assert Path(path).is_file(), path
+    apply_theme(qapp)
+    assert qapp.styleSheet() == STYLESHEET
+    for icon in (eye_icon(), timer_icon(), camera_icon()):
+        assert not icon.isNull()
+    qapp.setStyleSheet("")
+
+
 def test_profile_status_texts():
     from attention_tracker.ui.main_window import ProfileStatus, profile_status
     from tests.test_storage import make_profile

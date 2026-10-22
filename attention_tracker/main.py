@@ -12,11 +12,13 @@ from attention_tracker.config import AppConfig
 from attention_tracker.platform.paths import APP_NAME, default_db_path
 from attention_tracker.storage.storage import Storage
 from attention_tracker.ui.main_window import MainWindow
+from attention_tracker.ui.theme import apply_theme
 
 
 def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
+    apply_theme(app)
     with Storage(default_db_path()) as storage:
         window = MainWindow(AppConfig(), storage)
         window.show()

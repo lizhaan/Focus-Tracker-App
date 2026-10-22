@@ -73,6 +73,18 @@ class PomodoroConfig:
     short_break: float = 5 * 60.0
     long_break: float = 15 * 60.0
     pomodoros_before_long_break: int = 4
+    sound: bool = True  # сигнал наприкінці фази
+
+
+@dataclass(frozen=True)
+class SettingsLimitsConfig:
+    """Межі значень, які користувач може задати в налаштуваннях."""
+
+    work_minutes: tuple[int, int] = (5, 120)
+    break_minutes: tuple[int, int] = (1, 60)
+    pomodoros_before_long_break: tuple[int, int] = (1, 10)
+    camera_index: tuple[int, int] = (0, 9)
+    camera_resolutions: tuple[tuple[int, int], ...] = ((1280, 720), (640, 480))
 
 
 @dataclass(frozen=True)
@@ -160,6 +172,7 @@ class AppConfig:
     distraction: DistractionConfig = field(default_factory=DistractionConfig)
     focus: FocusConfig = field(default_factory=FocusConfig)
     pomodoro: PomodoroConfig = field(default_factory=PomodoroConfig)
+    limits: SettingsLimitsConfig = field(default_factory=SettingsLimitsConfig)
     calibration: CalibrationConfig = field(default_factory=CalibrationConfig)
     metrics: MetricsConfig = field(default_factory=MetricsConfig)
     ui: UiConfig = field(default_factory=UiConfig)
