@@ -167,10 +167,8 @@ class DebugView(QWidget):
         lines.append(f"ΔYaw °   {_fmt(d.d_yaw if d else None, 1):>8}")
         lines.append(f"ΔPitch ° {_fmt(d.d_pitch if d else None, 1):>8}")
         p = self._profile
-        lines.append(
-            f"вниз °   {_fmt(d.pitch_down if d else None, 1):>8}"
-            f"  поріг {_fmt(p.pitch_threshold if p else None, 1)}"
-        )
+        threshold = "вимк." if p is not None and not p.pitch_enabled else _fmt(p.pitch_threshold if p else None, 1)
+        lines.append(f"вниз °   {_fmt(d.pitch_down if d else None, 1):>8}  поріг {threshold}")
         if p is not None and p.ear_enabled:
             lines.append(f"EAR поріг {_fmt(p.ear_threshold, 3, signed=False):>7}")
         lines.append(f"state    {(r_.state.name if r_ is not None and r_.state else '—')}")

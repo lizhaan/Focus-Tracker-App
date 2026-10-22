@@ -9,7 +9,8 @@
   під час моргання (EAR < ear_freeze) Gaze_h/Gaze_v заморожуються;
 - gaze_out — точка поза робочим монітором з гістерезисом ε_out / ε_in;
 - телефон: очі прикриті (EAR < ear_threshold) або голова вниз
-  (pitch_down > pitch_threshold) безперервно ≥ T_blink.
+  (pitch_down > pitch_threshold) безперервно ≥ T_blink; кожна перевірка діє,
+  лише якщо калібрування показало, що вона розрізняє телефон і низ екрана.
 Пріоритет причин: FACE_ABSENT / HEAD_AWAY > PHONE_HEAD > PHONE_EYES > GAZE_OUT.
 
 Валідність перевіряється на сирих значеннях, решта — на згладжених.
@@ -105,7 +106,8 @@ class DistractionDetector:
             and smoothed.ear is not None
             and smoothed.ear < self._profile.ear_threshold
         )
-        phone_head = self._head_down.update(pitch_down > self._profile.pitch_threshold, now)
+        head_down = self._profile.pitch_enabled and pitch_down > self._profile.pitch_threshold
+        phone_head = self._head_down.update(head_down, now)
         phone_eyes = self._eyes_low.update(eyes_low, now)
         head = (d_yaw, d_pitch, pitch_down)
 

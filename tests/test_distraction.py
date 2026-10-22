@@ -102,6 +102,20 @@ def test_bottom_of_screen_is_not_phone(det):
     assert not hold(det, 0.0, 2.0, sy=0.95, pitch=3.0).distracted  # PD_bottom = 3 < 11.5
 
 
+def test_head_down_ignored_when_pitch_disabled():
+    d = DistractionDetector(DistractionConfig(), make_profile(pitch_enabled=False, pitch_threshold=None))
+    d.reset(0.0)
+    result = hold(d, 0.0, 2.0, pitch=12.8)  # зміна пози, а не телефон
+    assert result.reason is not Reason.PHONE_HEAD
+    assert result.pitch_down == pytest.approx(12.8)
+
+
+def test_result_carries_head_deltas(det):
+    det.apply_recenter(SessionAdjustment(yaw_baseline=2.0, pitch_baseline=-1.0))
+    result = step(det, ff(0.0, yaw=5.0, pitch=3.0, gaze_h=gaze_h_for(0.5, 3.0)))
+    assert (result.d_yaw, result.d_pitch, result.pitch_down) == pytest.approx((3.0, 4.0, 4.0))
+
+
 def test_eyes_low_is_phone_eyes(det):
     assert hold(det, 0.0, 0.6, ear=0.2).reason is Reason.PHONE_EYES
 

@@ -108,10 +108,20 @@ def test_profile_from_newer_version_loads_as_invalid(db, user):
     import json
 
     data = json.loads(make_profile(user).to_json())
-    data["pitch_enabled"] = False  # поле з новішої версії програми
+    data["future_field"] = 1  # поле з новішої версії програми
     data["schema_version"] = 99
     newer = CalibrationProfile.from_json(json.dumps(data))
     assert not newer.is_valid_for(newer.monitor_id, newer.camera_id, newer.frame_w, newer.frame_h)
+
+
+def test_old_schema_profile_loads_as_invalid(db, user):
+    import json
+
+    data = json.loads(make_profile(user).to_json())
+    del data["pitch_enabled"]
+    data["schema_version"] = 1  # профіль, збережений до появи pitch_enabled
+    old = CalibrationProfile.from_json(json.dumps(data))
+    assert not old.is_valid_for(old.monitor_id, old.camera_id, old.frame_w, old.frame_h)
 
 
 def test_profile_from_other_schema_version_is_invalid(db, user):

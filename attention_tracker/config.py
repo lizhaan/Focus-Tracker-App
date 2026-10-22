@@ -126,7 +126,6 @@ class CalibrationConfig:
     # пороги
     ear_min_gap: float = 0.03
     pitch_min_gap_deg: float = 5.0
-    pitch_fallback_margin_deg: float = 8.0
     pitch_min_margin_deg: float = 4.0
 
     # регресія

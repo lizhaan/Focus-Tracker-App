@@ -304,6 +304,8 @@ def test_profile_status_texts():
     assert profile_status(None, "mon", "index:0", (1280, 720))[0] is ProfileStatus.MISSING
     assert profile_status(profile, "mon", "index:0", (640, 480))[0] is ProfileStatus.INVALID
     assert profile_status(profile, "other", "index:0", (1280, 720))[0] is ProfileStatus.INVALID
+    old_status, old_text = profile_status(dataclasses.replace(profile, schema_version=1), "mon", "index:0", (1280, 720))
+    assert old_status is ProfileStatus.INVALID and "застарів" in old_text
     status, text = profile_status(profile, "mon", "index:0", (1280, 720))
     assert status is ProfileStatus.VALID
     assert "2026-10-22 10:00" in text and "0.050" in text

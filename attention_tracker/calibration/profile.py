@@ -7,7 +7,7 @@ from dataclasses import dataclass, fields
 
 from attention_tracker.vision.gaze_model import GazeRegressor
 
-PROFILE_SCHEMA_VERSION = 1
+PROFILE_SCHEMA_VERSION = 2  # 2: додано pitch_enabled; старіші профілі недійсні
 
 
 @dataclass(frozen=True)
@@ -33,7 +33,7 @@ class CalibrationProfile:
     ear_enabled: bool
     ear_threshold: float | None
     ear_freeze: float
-    pitch_threshold: float
+    pitch_threshold: float | None
     # регресія
     regressor_x: GazeRegressor
     regressor_y: GazeRegressor
@@ -42,6 +42,9 @@ class CalibrationProfile:
     # службові
     created_at: str  # ISO 8601, локальний час
     schema_version: int = PROFILE_SCHEMA_VERSION
+    # поріг нахилу голови; поле зі значенням за замовчуванням, щоб профілі
+    # старої версії схеми читалися (і показувались як недійсні)
+    pitch_enabled: bool = True
 
     def is_valid_for(self, monitor_id: str, camera_id: str, frame_w: int, frame_h: int) -> bool:
         """Недійсний, якщо змінилися монітор, камера або роздільна здатність кадру."""

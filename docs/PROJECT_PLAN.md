@@ -626,7 +626,7 @@ graph TD
   цикл.
 - `pomodoro`: авто-пауза не знімає ручну; зміна фаз; час на паузі не
   рахується.
-- `calibration_fitting`: пороги §7.2 для обох гілок (`ear_enabled` true/false).
+- `calibration_fitting`: пороги §7.2 для обох гілок (`ear_enabled` і `pitch_enabled` true/false).
 - `metrics`: відомий список подій → відомі метрики.
 - `storage`: на БД `:memory:`.
 

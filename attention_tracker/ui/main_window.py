@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from attention_tracker.calibration.profile import CalibrationProfile
+from attention_tracker.calibration.profile import PROFILE_SCHEMA_VERSION, CalibrationProfile
 from attention_tracker.calibration.recenter import RecenterResult
 from attention_tracker.capture.camera import camera_id_for
 from attention_tracker.config import AppConfig
@@ -107,6 +107,8 @@ def profile_status(
     """Статус профілю робочого монітора і текст для головного вікна."""
     if profile is None:
         return ProfileStatus.MISSING, "Не відкалібровано — натисніть «Калібрувати»"
+    if profile.schema_version != PROFILE_SCHEMA_VERSION:
+        return ProfileStatus.INVALID, "Профіль застарів після оновлення програми — відкалібруйте знову"
     if not profile.is_valid_for(monitor_id, camera_id, *frame_size):
         return ProfileStatus.INVALID, "Профіль недійсний (змінилась камера або роздільна здатність) — відкалібруйте знову"
     date = profile.created_at.replace("T", " ")[:16]

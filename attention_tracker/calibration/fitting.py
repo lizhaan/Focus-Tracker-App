@@ -35,7 +35,8 @@ class Thresholds:
     ear_enabled: bool
     ear_threshold: float | None  # None, якщо EAR не розрізняє низ екрана і телефон
     ear_freeze: float
-    pitch_threshold: float
+    pitch_enabled: bool
+    pitch_threshold: float | None  # None, якщо нахил голови не розрізняє низ екрана і телефон
 
 
 def compute_thresholds(
@@ -50,16 +51,16 @@ def compute_thresholds(
     ear_enabled = ear_bottom - ear_phone >= cfg.ear_min_gap
     ear_threshold = (ear_bottom + ear_phone) / 2.0 if ear_enabled else None
 
-    if pd_phone - pd_bottom >= cfg.pitch_min_gap_deg:
-        pitch_threshold = (pd_bottom + pd_phone) / 2.0
-    else:
-        pitch_threshold = pd_bottom + cfg.pitch_fallback_margin_deg
-    pitch_threshold = max(pitch_threshold, pd_bottom + cfg.pitch_min_margin_deg)
+    pitch_enabled = pd_phone - pd_bottom >= cfg.pitch_min_gap_deg
+    pitch_threshold = (
+        max((pd_bottom + pd_phone) / 2.0, pd_bottom + cfg.pitch_min_margin_deg) if pitch_enabled else None
+    )
 
     return Thresholds(
         ear_enabled=ear_enabled,
         ear_threshold=ear_threshold,
         ear_freeze=ear_freeze_factor * ear_bottom,
+        pitch_enabled=pitch_enabled,
         pitch_threshold=pitch_threshold,
     )
 

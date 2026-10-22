@@ -415,6 +415,7 @@ class CalibrationProcedure:
             ear_enabled=t.ear_enabled,
             ear_threshold=t.ear_threshold,
             ear_freeze=t.ear_freeze,
+            pitch_enabled=t.pitch_enabled,
             pitch_threshold=t.pitch_threshold,
             regressor_x=reg_x,
             regressor_y=reg_y,

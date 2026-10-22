@@ -35,12 +35,21 @@ def test_thresholds_ear_enabled_and_pitch_midpoint():
     assert t.ear_freeze == pytest.approx(0.7 * 0.26)
 
 
-def test_thresholds_ear_disabled_and_pitch_fallback():
-    t = compute_thresholds(ear_bottom=0.25, ear_phone=0.24, pd_bottom=3.0, pd_phone=6.0,
+def test_thresholds_ear_disabled():
+    t = compute_thresholds(ear_bottom=0.25, ear_phone=0.24, pd_bottom=3.0, pd_phone=20.0,
                            cfg=CFG, ear_freeze_factor=FREEZE)
     assert t.ear_enabled is False
     assert t.ear_threshold is None
-    assert t.pitch_threshold == pytest.approx(3.0 + 8.0)
+    assert t.pitch_enabled is True
+
+
+def test_pitch_disabled_when_head_does_not_separate_phone():
+    # як у реальному профілі: у телефон дивляться очима, нахил майже той самий
+    t = compute_thresholds(ear_bottom=0.226, ear_phone=0.067, pd_bottom=-2.0, pd_phone=2.0,
+                           cfg=CFG, ear_freeze_factor=FREEZE)
+    assert t.pitch_enabled is False
+    assert t.pitch_threshold is None
+    assert t.ear_enabled is True
 
 
 def test_pitch_threshold_at_least_bottom_plus_margin():

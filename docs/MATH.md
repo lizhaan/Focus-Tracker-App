@@ -255,7 +255,7 @@ gaze_out(t) = ¬on_screen(t)
 
 ```
 eyes_low(t)  = ear_enabled AND EAR(t) < ear_threshold
-head_down(t) = pitch_down(t) > pitch_threshold
+head_down(t) = pitch_enabled AND pitch_down(t) > pitch_threshold
 
 phone_eyes(t) = eyes_low(t)  безперервно протягом ≥ T_blink
 phone_head(t) = head_down(t) безперервно протягом ≥ T_blink
@@ -443,16 +443,23 @@ PD_phone  = mean(s_pitch · ΔPitch)
     ear_enabled   = False         (EAR не розрізняє ці випадки — покладаємось на pitch і gaze)
 
 якщо PD_phone − PD_bottom ≥ 5°:
-    pitch_threshold = (PD_bottom + PD_phone) / 2
+    pitch_enabled   = True
+    pitch_threshold = max( (PD_bottom + PD_phone) / 2,  PD_bottom + 4° )
 інакше:
-    pitch_threshold = PD_bottom + 8°
+    pitch_enabled   = False       (нахил голови не розрізняє ці випадки — покладаємось на EAR і gaze)
 
-pitch_threshold = max(pitch_threshold, PD_bottom + 4°)
 ear_freeze      = 0.7 · EAR_bottom
 ```
 
 Поріг береться **посередині** між "дивлюсь на низ екрана" і "дивлюсь у
 телефон". Тому погляд на низ екрана гарантовано не спрацьовує як телефон.
+
+Якщо користувач дивиться в телефон переважно очима, нахил голови майже не
+змінюється, і будь-який фіксований запас над `PD_bottom` спрацьовував би від
+звичайних змін пози (±5–10°). Тому в цьому випадку перевірка нахилу
+вимикається так само, як EAR. Дуже сильний нахил голови все одно ловиться як
+`HEAD_AWAY` (розділ 4.1). Якщо вимкнені обидві перевірки, телефон окремо не
+визначається — лишаються `gaze_out` і `HEAD_AWAY`.
 
 ### 7.3 Набір даних регресії
 
@@ -509,7 +516,7 @@ off_x = 0.5 − sx_c,   off_y = 0.5 − sy_c
 | `yaw_baseline, pitch_baseline, EAR_center` | крок 1 |
 | `s_pitch` | крок 3 |
 | `EAR_bottom, PD_bottom, EAR_phone, PD_phone` | кроки 4, 5 |
-| `ear_enabled, ear_threshold, ear_freeze, pitch_threshold` | 7.2 |
+| `ear_enabled, ear_threshold, ear_freeze, pitch_enabled, pitch_threshold` | 7.2 |
 | `cx0, cx[4], mu_x[4], sigma_x[4]` | 7.4 |
 | `cy0, cy[4], mu_y[4], sigma_y[4]` | 7.4 |
 | `calib_error` | 7.5 |
