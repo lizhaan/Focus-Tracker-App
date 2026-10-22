@@ -52,19 +52,6 @@ class DistractionConfig:
 
 
 @dataclass(frozen=True)
-class AlphaThresholdsConfig:
-    """Етап 2 п.3: тимчасові пороги без регресії.
-
-    gaze_out = |Gaze_h − gaze_h_baseline| > gaze_h_delta OR |ΔYaw| > yaw_delta_deg,
-    обидва baseline беруться з перших baseline_duration секунд сесії.
-    """
-
-    gaze_h_delta: float = 0.15
-    yaw_delta_deg: float = 25.0
-    baseline_duration: float = 2.0  # с
-
-
-@dataclass(frozen=True)
 class FocusConfig:
     """таймери машини станів. n і y налаштовує користувач."""
 
@@ -161,7 +148,6 @@ class AppConfig:
     landmarker: LandmarkerConfig = field(default_factory=LandmarkerConfig)
     filters: FilterConfig = field(default_factory=FilterConfig)
     distraction: DistractionConfig = field(default_factory=DistractionConfig)
-    alpha_thresholds: AlphaThresholdsConfig = field(default_factory=AlphaThresholdsConfig)
     focus: FocusConfig = field(default_factory=FocusConfig)
     calibration: CalibrationConfig = field(default_factory=CalibrationConfig)
     metrics: MetricsConfig = field(default_factory=MetricsConfig)

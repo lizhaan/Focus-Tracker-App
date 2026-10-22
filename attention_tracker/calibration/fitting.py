@@ -8,6 +8,7 @@ from enum import Enum
 import numpy as np
 
 from attention_tracker.config import CalibrationConfig
+from attention_tracker.vision.features import wrap
 from attention_tracker.vision.gaze_model import GazeRegressor, phi_x, phi_y
 
 
@@ -21,6 +22,12 @@ def robust_mean(values: list[float] | np.ndarray, mad_k: float) -> float:
     mad = np.median(dev)
     kept = x[dev <= mad_k * mad]
     return float(kept.mean())
+
+
+def angle_robust_mean(values: list[float], mad_k: float) -> float:
+    """Робастне середнє кутів (градуси) без стрибка через ±180°."""
+    ref = float(np.median(values))
+    return ref + robust_mean([wrap(v - ref) for v in values], mad_k)
 
 
 @dataclass(frozen=True)

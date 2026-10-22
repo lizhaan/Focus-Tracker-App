@@ -158,5 +158,8 @@ class DebugView(QWidget):
         lines.append("")
         lines.append(f"distr.   {('так' if d is not None and d.distracted else 'ні'):>8}")
         lines.append(f"reason   {(d.reason.name if d is not None else '—'):>8}")
+        point = d.screen_point if d is not None else None
+        lines.append(f"sx       {_fmt(point[0] if point else None, 2):>8}")
+        lines.append(f"sy       {_fmt(point[1] if point else None, 2):>8}")
         lines.append(f"state    {(r_.state.name if r_ is not None and r_.state else '—')}")
         self._values.setText("\n".join(lines))

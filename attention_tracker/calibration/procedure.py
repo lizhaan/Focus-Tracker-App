@@ -19,6 +19,7 @@ import numpy as np
 from attention_tracker.calibration.fitting import (
     Quality,
     RegressionSample,
+    angle_robust_mean,
     Thresholds,
     compute_thresholds,
     fit_regressors,
@@ -82,12 +83,6 @@ class _Collected:
     valid: list[FrameFeatures] = field(default_factory=list)
     first_ts: float | None = None
     last_ts: float | None = None
-
-
-def _angle_robust_mean(values: list[float], mad_k: float) -> float:
-    """Робастне середнє кутів без стрибка через ±180°."""
-    ref = float(np.median(values))
-    return ref + robust_mean([wrap(v - ref) for v in values], mad_k)
 
 
 class CalibrationProcedure:
@@ -332,8 +327,8 @@ class CalibrationProcedure:
         return d_yaw, d_pitch
 
     def _finish_center(self, step: CalibrationStep, frames: list[FrameFeatures]) -> None:
-        self._yaw_baseline = _angle_robust_mean([f.yaw for f in frames], self._cfg.mad_k)
-        self._pitch_baseline = _angle_robust_mean([f.pitch for f in frames], self._cfg.mad_k)
+        self._yaw_baseline = angle_robust_mean([f.yaw for f in frames], self._cfg.mad_k)
+        self._pitch_baseline = angle_robust_mean([f.pitch for f in frames], self._cfg.mad_k)
         self._ear_center = self._mean(frames, "ear")
         self._add_sample(step, frames, d_yaw=0.0, d_pitch=0.0)
 

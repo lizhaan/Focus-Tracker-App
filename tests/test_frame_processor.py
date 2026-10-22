@@ -1,85 +1,93 @@
 import pytest
 
+from attention_tracker.calibration.recenter import RecenterState
 from attention_tracker.config import AppConfig
 from attention_tracker.models import FocusState, FrameFeatures, Reason
 from attention_tracker.workers.frame_processor import FrameProcessor
+from tests.test_distraction import ff, make_profile
 
 DT = 0.05
 
 
-def ff(ts: float, yaw: float = 0.0, gaze_h: float = 0.5, valid: bool = True) -> FrameFeatures:
-    if not valid:
-        return FrameFeatures.invalid(ts)
-    return FrameFeatures(ts=ts, valid=True, ear=0.3, yaw=yaw, pitch=0.0, roll=0.0,
-                         gaze_h=gaze_h, gaze_v=0.0, iris_distance_px=120.0)
-
-
 def run(proc, t0: float, t1: float, **kwargs):
-    """Кадри на [t0, t1); повертає (останній FrameResult, список переходів)."""
-    changes, result = [], None
+    """Кадри на [t0, t1); повертає (останній вихід, переходи, події перецентрування)."""
+    out, changes, events = None, [], []
     for i in range(round((t1 - t0) / DT)):
-        result, change = proc.process_features(ff(round(t0 + i * DT, 6), **kwargs))
-        if change is not None:
-            changes.append(change)
-    return result, changes
+        frame = ff(round(t0 + i * DT, 6), **kwargs) if kwargs.get("valid", True) else \
+            FrameFeatures.invalid(round(t0 + i * DT, 6))
+        out = proc.process_features(frame)
+        if out.change is not None:
+            changes.append(out.change)
+        if out.recenter_event is not None:
+            events.append(out.recenter_event)
+    return out, changes, events
 
 
 @pytest.fixture
 def proc() -> FrameProcessor:
-    p = FrameProcessor(AppConfig())
+    p = FrameProcessor(AppConfig(), make_profile())
     p.start_session(0.0)
     return p
 
 
-def test_baseline_then_focused(proc):
-    result, changes = run(proc, 0.0, 2.1)
-    assert proc.baseline_ready
-    assert changes == []
-    assert result.state is FocusState.FOCUSED
-    assert not result.distraction.distracted
+def test_session_starts_with_recentering(proc):
+    out, changes, events = run(proc, 0.0, 1.0)
+    assert proc.recentering
+    assert out.result.state is None and out.result.distraction is None
+    assert changes == [] and events == []
+
+    out, _, events = run(proc, 1.0, 2.5)
+    assert events == [RecenterState.DONE]
+    assert not proc.recentering
+    assert out.result.state is FocusState.FOCUSED
+    assert out.result.distraction.screen_point is not None
 
 
-def test_full_cycle_look_away_and_back(proc):
-    run(proc, 0.0, 2.1)
-    result, away = run(proc, 2.1, 6.0, gaze_h=0.9)  # дивимось убік ~4 с
-    assert [c.new for c in away] == [FocusState.NOT_FOCUSED, FocusState.LOST_FOCUS]
-    assert all(c.reason is Reason.GAZE_OUT for c in away)
-    assert away[1].ts - away[0].ts == pytest.approx(3.0, abs=DT)  # n = 3 с
-    assert result.state is FocusState.LOST_FOCUS
-
-    result, back = run(proc, 6.0, 6.5)
-    assert [c.new for c in back] == [FocusState.RECOVERING]
-    assert 0.0 < result.recovering_progress < 1.0
-
-    result, back2 = run(proc, 6.5, 9.0)
-    assert [c.new for c in back2] == [FocusState.FOCUSED]
-    assert back2[0].ts - back[0].ts == pytest.approx(2.0, abs=DT)  # y = 2 с
-    assert result.recovering_progress is None
+def test_recenter_retry_restarts_automatically(proc):
+    _, _, events = run(proc, 0.0, 2.5, valid=False)
+    assert RecenterState.RETRY in events
+    assert proc.recentering
+    _, _, events = run(proc, 2.5, 5.0)
+    assert events == [RecenterState.DONE]
 
 
-def test_face_absent_leads_to_lost_focus(proc):
-    run(proc, 0.0, 2.1)
-    result, changes = run(proc, 2.1, 6.5, valid=False)
+def test_recenter_result_carried_on_done_frame(proc):
+    outputs = [proc.process_features(ff(round(i * DT, 6), yaw=4.0)) for i in range(60)]
+    done = [o for o in outputs if o.recenter_event is RecenterState.DONE]
+    assert len(done) == 1
+    assert done[0].recenter_result.adjustment.yaw_baseline == pytest.approx(4.0)
+
+
+def test_look_away_after_recentering_loses_focus(proc):
+    run(proc, 0.0, 2.5)
+    _, changes, _ = run(proc, 2.5, 7.0, sx=1.3)
     assert [c.new for c in changes] == [FocusState.NOT_FOCUSED, FocusState.LOST_FOCUS]
-    assert changes[-1].reason is Reason.FACE_ABSENT
+    assert all(c.reason is Reason.GAZE_OUT for c in changes)
+
+    _, back, _ = run(proc, 7.0, 10.0)
+    assert [c.new for c in back] == [FocusState.RECOVERING, FocusState.FOCUSED]
+
+
+def test_phone_leads_to_lost_focus(proc):
+    run(proc, 0.0, 2.5)
+    _, changes, _ = run(proc, 2.5, 7.0, pitch=15.0)
+    assert [c.new for c in changes] == [FocusState.NOT_FOCUSED, FocusState.LOST_FOCUS]
+    assert changes[-1].reason is Reason.PHONE_HEAD
+
+
+def test_head_turn_with_eyes_on_screen_keeps_focus(proc):
+    run(proc, 0.0, 2.5)
+    _, changes, _ = run(proc, 2.5, 7.0, sx=0.5, yaw=20.0)
+    assert changes == []
 
 
 def test_long_face_absence_resets_filters(proc):
-    run(proc, 0.0, 2.1, yaw=0.0)
-    run(proc, 2.1, 3.0, valid=False)  # довше T_noface
-    result, _ = proc.process_features(ff(3.0, yaw=10.0))
-    assert result.features.yaw == pytest.approx(10.0)  # фільтр почав з нуля
+    run(proc, 0.0, 2.5, yaw=0.0)
+    run(proc, 2.5, 3.5, valid=False)
+    out = proc.process_features(ff(3.5, yaw=10.0))
+    assert out.result.features.yaw == pytest.approx(10.0)
 
 
-def test_start_session_resets_everything(proc):
-    run(proc, 0.0, 2.1)
-    run(proc, 2.1, 6.0, gaze_h=0.9)
-    assert proc.state_machine.state is FocusState.LOST_FOCUS
-    proc.start_session(10.0)
-    assert proc.state_machine.state is FocusState.FOCUSED
-    assert not proc.baseline_ready
-
-
-def test_set_timings_applies_to_state_machine(proc):
+def test_set_timings(proc):
     proc.set_timings(5.0, 1.0)
     assert (proc.state_machine.n, proc.state_machine.y) == (5.0, 1.0)

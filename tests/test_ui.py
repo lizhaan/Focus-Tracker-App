@@ -108,6 +108,29 @@ def test_saved_profile_enables_start_and_persists_monitor(main_window):
     assert "Відкалібровано" in window._profile_label.text()
 
 
+def test_recenter_window_cancel_and_finish(qapp):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from attention_tracker.ui.recenter_window import RecenterWindow
+
+    cancelled = []
+    window = RecenterWindow(duration=2.0, screen=None)
+    window.cancelled.connect(lambda: cancelled.append(True))
+    window.resize(800, 450)
+    window.show()
+    window.restart()
+    window.grab()  # малювання з підказкою повтору
+    QTest.keyClick(window, Qt.Key.Key_Escape)
+    assert cancelled == [True]
+
+    done = RecenterWindow(duration=2.0, screen=None)
+    done.cancelled.connect(lambda: cancelled.append(True))
+    done.show()
+    done.finish()
+    assert cancelled == [True]  # завершення — не скасування
+
+
 def test_profile_status_texts():
     from attention_tracker.ui.main_window import ProfileStatus, profile_status
     from tests.test_storage import make_profile

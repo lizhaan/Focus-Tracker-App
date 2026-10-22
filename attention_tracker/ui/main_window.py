@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 
-from PySide6.QtCore import Qt, QTimer, Slot
+from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QComboBox,
@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from attention_tracker.calibration.profile import CalibrationProfile
+from attention_tracker.calibration.recenter import RecenterResult
 from attention_tracker.capture.camera import camera_id_for
 from attention_tracker.config import AppConfig
 from attention_tracker.models import FocusState, FrameResult, StateChange
@@ -32,8 +33,9 @@ from attention_tracker.storage.storage import DEFAULT_USER, Storage
 from attention_tracker.ui.calibration_window import CalibrationWindow
 from attention_tracker.ui.debug_view import DebugView
 from attention_tracker.ui.overlay import FocusOverlay
+from attention_tracker.ui.recenter_window import RecenterWindow
 from attention_tracker.ui.state_style import style_for
-from attention_tracker.workers.pipeline_worker import PipelineWorker
+from attention_tracker.workers.pipeline_worker import PipelineWorker, WorkerMode
 
 # Оформлення
 _WINDOW_SIZE = (960, 600)
@@ -42,8 +44,8 @@ _LABEL_STYLE = "font-size: 26px; font-weight: 600;"
 _HINT_STYLE = "color: #757575; font-size: 14px;"
 _OK_STYLE = "color: #2e7d32;"
 _BAD_STYLE = "color: #c62828;"
-_MS_PER_S = 1000
-_BASELINE_HINT = "Перші {sec:g} с дивіться на екран — запамʼятовуємо положення голови"
+_RECENTER_HINT = "Дивіться на точку в центрі робочого монітора"
+_LARGE_SHIFT_HINT = "Положення сильно змінилось — рекомендуємо повне калібрування"
 
 # Ключі таблиці settings
 SETTING_WORK_MONITOR = "work_monitor"
@@ -142,8 +144,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(self._debug, "Debug")
         self.setCentralWidget(tabs)
 
-        self._baseline_timer = QTimer(self, singleShot=True)
-        self._baseline_timer.timeout.connect(lambda: self._hint.clear())
+        self._recenter: RecenterWindow | None = None
 
         app = QGuiApplication.instance()
         app.screenAdded.connect(lambda _s: self.reload_monitors())
@@ -232,8 +233,12 @@ class MainWindow(QMainWindow):
     def start_session(self) -> None:
         if self._worker is not None or self._profile_status is not ProfileStatus.VALID:
             return
-        worker = PipelineWorker(self._cfg)
+        monitor = self.work_monitor
+        profile = self._storage.load_profile(self._user_id, monitor.monitor_id, self._camera_id)
+        worker = PipelineWorker(self._cfg, WorkerMode.SESSION, profile)
         worker.camera_opened.connect(self._on_camera_opened)
+        worker.recenter_done.connect(self._on_recenter_done)
+        worker.recenter_retry.connect(self._on_recenter_retry)
         worker.frame_processed.connect(self._on_frame_processed)
         worker.state_changed.connect(self._on_state_changed)
         worker.camera_error.connect(self._on_camera_error)
@@ -241,12 +246,14 @@ class MainWindow(QMainWindow):
         self._debug.attach(worker)
         self._worker = worker
         self.statusBar().clearMessage()
-        self._render_state(FocusState.FOCUSED)
-        duration = self._cfg.alpha_thresholds.baseline_duration
-        self._hint.setText(_BASELINE_HINT.format(sec=duration))
-        self._baseline_timer.start(int(duration * _MS_PER_S))
+        self._hint.setText(_RECENTER_HINT)
+
+        recenter = RecenterWindow(self._cfg.calibration.recenter_duration, find_screen(monitor.monitor_id))
+        recenter.cancelled.connect(self.stop_session)
+        self._recenter = recenter
         self._update_buttons()
         worker.start()
+        recenter.open_on_screen()
 
     @Slot()
     def stop_session(self) -> None:
@@ -263,11 +270,29 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Камера або її роздільна здатність змінились — потрібне калібрування")
             self.stop_session()
 
+    @Slot(object)
+    def _on_recenter_done(self, result: RecenterResult) -> None:
+        self._close_recenter()
+        self._hint.clear()
+        self._render_state(FocusState.FOCUSED)
+        if result.large_shift:
+            self.statusBar().showMessage(_LARGE_SHIFT_HINT)
+
+    @Slot()
+    def _on_recenter_retry(self) -> None:
+        if self._recenter is not None:
+            self._recenter.restart()
+
+    def _close_recenter(self) -> None:
+        if self._recenter is not None:
+            self._recenter.finish()
+            self._recenter = None
+
     @Slot()
     def _on_worker_finished(self) -> None:
+        self._close_recenter()
         self._debug.detach()
         self._worker = None
-        self._baseline_timer.stop()
         self._hint.clear()
         self._render_state(None)
         self._update_buttons()
