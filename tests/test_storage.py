@@ -104,6 +104,16 @@ def test_file_database_persists(tmp_path):
         assert db.get_setting("work_monitor") == "DEL|U2419|ABC"
 
 
+def test_profile_from_newer_version_loads_as_invalid(db, user):
+    import json
+
+    data = json.loads(make_profile(user).to_json())
+    data["pitch_enabled"] = False  # поле з новішої версії програми
+    data["schema_version"] = 99
+    newer = CalibrationProfile.from_json(json.dumps(data))
+    assert not newer.is_valid_for(newer.monitor_id, newer.camera_id, newer.frame_w, newer.frame_h)
+
+
 def test_profile_from_other_schema_version_is_invalid(db, user):
     profile = dataclasses.replace(make_profile(user), schema_version=99)
     assert not profile.is_valid_for(profile.monitor_id, profile.camera_id, 1280, 720)

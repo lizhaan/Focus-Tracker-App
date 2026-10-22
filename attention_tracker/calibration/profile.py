@@ -60,7 +60,11 @@ class CalibrationProfile:
 
     @classmethod
     def from_json(cls, text: str) -> CalibrationProfile:
+        """Невідомі поля (профіль з іншої версії програми) ігноруються — такий
+        профіль читається, а `is_valid_for` за schema_version вважає його недійсним."""
         data = json.loads(text)
+        known = {f.name for f in fields(cls)}
+        data = {k: v for k, v in data.items() if k in known}
         data["regressor_x"] = GazeRegressor.from_dict(data["regressor_x"])
         data["regressor_y"] = GazeRegressor.from_dict(data["regressor_y"])
         return cls(**data)
