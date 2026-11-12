@@ -62,18 +62,6 @@ def test_overlay_shows_and_hides(qapp):
     overlay.close()
 
 
-@pytest.fixture
-def main_window(qapp):
-    from attention_tracker.storage.storage import Storage
-    from attention_tracker.ui.main_window import MainWindow
-
-    storage = Storage(":memory:")
-    window = MainWindow(AppConfig(), storage)
-    yield window, storage
-    window.close()
-    storage.close()
-
-
 def test_main_window_idle_state(main_window):
     window, _ = main_window
     assert not window._stop.isEnabled()
@@ -304,8 +292,16 @@ def test_session_is_recorded(main_window):
     window._on_recenter_done(RecenterResult(SessionAdjustment(0.0, 0.0), large_shift=False))
     assert window._recorder is not None
     window._on_state_changed(StateChange(0.0, FocusState.FOCUSED, FocusState.NOT_FOCUSED, Reason.GAZE_OUT))
+    window._recorder._t0 -= 30.0  # ніби сесія триває вже 30 с
+    assert window._summary_window is None  # під час сесії підсумків немає
     window.stop_session()
     assert window._recorder is None
+
+    summary = window._summary_window  # після «Стоп» — окреме вікно з підсумками
+    assert summary is not None and summary.isVisible()
+    assert summary.chart.segment_count >= 1
+    assert summary.tile_values[1] == "0"  # втрат фокусу не було
+    summary.close()
 
     [info] = storage.list_sessions(window._user_id)
     assert info.ended_at is not None and info.metrics is not None
@@ -313,6 +309,13 @@ def test_session_is_recorded(main_window):
     events = storage.pomodoro_events(info.id)
     assert [e.event.value for e in events] == ["phase_start", "stop"]
     assert len(storage.focus_events(info.id)) == 1
+
+
+def test_no_summary_when_cancelled_before_tracking(main_window):
+    window, storage = main_window
+    window.stop_session()  # скасовано під час точки в центрі — запису ще немає
+    assert window._summary_window is None
+    assert storage.list_sessions(window._user_id) == []
 
 
 def test_free_session_is_recorded(main_window):

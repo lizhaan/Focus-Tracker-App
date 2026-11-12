@@ -32,13 +32,25 @@ class SessionRecorder:
     ) -> None:
         self._storage = storage
         self._t0 = t0
+        self.started_at = started_at
+        self.settings = dict(settings)
         self._finished = False
         self._last_phase = PomodoroPhase.IDLE
+        self._focus_events: list[FocusEventRow] = []  # копія в памʼяті для живого графіка
+        self._pomodoro_events: list[PomodoroEventRow] = []
         self.session_id = storage.create_session(user_id, started_at, settings, monitor_id, profile_id)
 
     @property
     def finished(self) -> bool:
         return self._finished
+
+    @property
+    def focus_events(self) -> list[FocusEventRow]:
+        return list(self._focus_events)
+
+    @property
+    def pomodoro_events(self) -> list[PomodoroEventRow]:
+        return list(self._pomodoro_events)
 
     def offset(self, now: float) -> float:
         return max(0.0, now - self._t0)
@@ -48,11 +60,14 @@ class SessionRecorder:
             return
         row = FocusEventRow(self.offset(change.ts), change.old, change.new, change.reason)
         self._storage.add_focus_event(self.session_id, row)
+        self._focus_events.append(row)
 
     def on_pomodoro_event(self, event: PomodoroEvent, phase: PomodoroPhase, now: float) -> None:
         if self._finished:
             return
-        self._storage.add_pomodoro_event(self.session_id, PomodoroEventRow(self.offset(now), event, phase))
+        row = PomodoroEventRow(self.offset(now), event, phase)
+        self._storage.add_pomodoro_event(self.session_id, row)
+        self._pomodoro_events.append(row)
         if event is PomodoroEvent.PHASE_START:
             self._last_phase = phase
         elif event is PomodoroEvent.STOP:

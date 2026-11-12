@@ -13,3 +13,17 @@ def qapp():
 
     app = QApplication.instance() or QApplication([])
     yield app
+
+
+@pytest.fixture
+def main_window(qapp):
+    """Головне вікно на БД у памʼяті (без камери)."""
+    from attention_tracker.config import AppConfig
+    from attention_tracker.storage.storage import Storage
+    from attention_tracker.ui.main_window import MainWindow
+
+    storage = Storage(":memory:")
+    window = MainWindow(AppConfig(), storage)
+    yield window, storage
+    window.close()
+    storage.close()

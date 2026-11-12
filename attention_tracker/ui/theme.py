@@ -89,6 +89,10 @@ QFrame#card {{ background-color: {SURFACE}; border: 1px solid {BORDER}; border-r
 QFrame#card QLabel, QFrame#card QCheckBox {{ background: transparent; }}
 QFrame#separator {{ background-color: {BORDER}; max-height: 1px; border: none; }}
 QLabel#cardTitle {{ font-size: 17px; font-weight: 600; }}
+QLabel#windowTitle {{ font-size: 24px; font-weight: 700; }}
+QLabel#subtitle {{ color: {MUTED}; font-size: 13px; }}
+QLabel#tileValue {{ font-size: 28px; font-weight: 700; }}
+QLabel#tileLabel {{ color: {MUTED}; font-size: 12px; }}
 QLabel#fieldLabel {{ font-weight: 600; }}
 QLabel#hint {{ color: {HINT}; font-size: 12px; }}
 QLabel#timer {{ font-size: 92px; font-weight: 700; }}
@@ -97,6 +101,20 @@ QLabel#stateLabel {{ font-size: 28px; font-weight: 700; }}
 QLabel#sessionHint {{ color: {MUTED}; font-size: 13px; }}
 QLabel#profileOk {{ color: {OK}; font-size: 12px; }}
 QLabel#profileBad {{ color: {BAD}; font-size: 12px; }}
+
+QTableWidget {{
+    background-color: {SURFACE}; color: {TEXT};
+    border: 1px solid {BORDER}; border-radius: 12px;
+    selection-background-color: {ACCENT}; selection-color: #ffffff; outline: none;
+}}
+QTableWidget::item {{ padding: 6px 8px; border-bottom: 1px solid {BG}; }}
+QTableWidget::item:selected {{ background-color: {ACCENT}; color: #ffffff; }}
+QHeaderView {{ background: transparent; }}
+QHeaderView::section {{
+    background-color: {SURFACE}; color: {MUTED}; font-size: 12px; font-weight: 600;
+    border: none; border-bottom: 1px solid {BORDER}; padding: 8px;
+}}
+QTableCornerButton::section {{ background: {SURFACE}; border: none; }}
 
 QScrollArea {{ border: none; }}
 QScrollBar:vertical {{ background: {BG}; width: 10px; margin: 0; }}

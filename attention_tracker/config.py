@@ -148,6 +148,7 @@ class MetricsConfig:
 
     live_bin: float = 10.0  # с
     history_bin: float = 60.0  # с
+    short_session_max: float = 600.0  # с; коротші сесії в підсумках — з бінами live_bin
 
 
 @dataclass(frozen=True)

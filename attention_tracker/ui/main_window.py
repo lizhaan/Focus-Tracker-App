@@ -39,6 +39,7 @@ from attention_tracker.focus.stopwatch import Stopwatch
 from attention_tracker.models import FocusState, FrameResult, PomodoroPhase, StateChange
 from attention_tracker.platform.monitors import MonitorInfo, find_screen, list_monitors
 from attention_tracker.session.recorder import SessionRecorder, recover_unfinished
+from attention_tracker.session.summary import SessionSummary, build_summary
 from attention_tracker.storage.storage import DEFAULT_USER, Storage
 from attention_tracker.storage.user_settings import (
     UserSettings,
@@ -49,8 +50,10 @@ from attention_tracker.storage.user_settings import (
 )
 from attention_tracker.ui.calibration_window import CalibrationWindow
 from attention_tracker.ui.debug_view import DebugView
+from attention_tracker.ui.history_view import HistoryView
 from attention_tracker.ui.overlay import FocusOverlay
 from attention_tracker.ui.recenter_window import RecenterWindow
+from attention_tracker.ui.session_summary import SessionSummaryWindow
 from attention_tracker.ui.settings_view import SettingsView
 from attention_tracker.ui.state_style import BREAK_STYLE, PAUSE_STYLE, StateStyle, style_for
 from attention_tracker.workers.pipeline_worker import PipelineWorker, WorkerMode
@@ -223,13 +226,18 @@ class MainWindow(QMainWindow):
 
         tabs = QTabWidget()
         tabs.addTab(session, "Сесія")
+        recover_unfinished(storage)  # сесії, що обірвались при минулому запуску — до показу історії
+        self._history = HistoryView(storage, self._user_id, cfg.metrics)
+        tabs.addTab(self._history, "Історія")
         tabs.addTab(self._settings_view, "Налаштування")
         tabs.addTab(self._debug, "Debug")
+        tabs.currentChanged.connect(self._on_tab_changed)
+        self._tabs = tabs
         self.setCentralWidget(tabs)
 
         self._recenter: RecenterWindow | None = None
         self._recorder: SessionRecorder | None = None
-        recover_unfinished(storage)  # сесії, що обірвались при минулому запуску
+        self._summary_window: SessionSummaryWindow | None = None
 
         app = QGuiApplication.instance()
         app.screenAdded.connect(lambda _s: self.reload_monitors())
@@ -463,9 +471,30 @@ class MainWindow(QMainWindow):
             self._recorder.on_pomodoro_event(event, phase, now)
 
     def _finish_recording(self, now: float) -> None:
-        if self._recorder is not None and not self._recorder.finished:
-            self._recorder.finish(now, datetime.now().isoformat(timespec="seconds"))
+        rec = self._recorder
         self._recorder = None
+        if rec is None or rec.finished:
+            return
+        metrics = rec.finish(now, datetime.now().isoformat(timespec="seconds"))
+        self._history.refresh()
+        if metrics.t_tracked > 0:  # сесію не скасовано до початку трекінгу
+            summary = build_summary(
+                rec.started_at, rec.focus_events, rec.pomodoro_events, rec.offset(now),
+                self._cfg.metrics, metrics,
+            )
+            self.show_summary(summary, pomodoro=rec.settings.get("pomodoro", True))
+
+    @Slot(int)
+    def _on_tab_changed(self, index: int) -> None:
+        if self._tabs.widget(index) is self._history:
+            self._history.refresh()
+
+    def show_summary(self, summary: SessionSummary, pomodoro: bool) -> None:
+        """Окреме вікно з підсумками (після сесії або з історії)."""
+        window = SessionSummaryWindow(summary, pomodoro)
+        window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self._summary_window = window  # тримаємо посилання, поки вікно відкрите
+        window.show()
 
     @Slot()
     def _on_worker_finished(self) -> None:

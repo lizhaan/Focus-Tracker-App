@@ -37,6 +37,14 @@ def test_records_events_with_offsets(db, user):
     assert db.pomodoro_events(rec.session_id) == [PomodoroEventRow(0.0, PE.PHASE_START, PomodoroPhase.WORK)]
 
 
+def test_events_kept_in_memory_for_live_chart(db, user):
+    rec = recorder(db, user)
+    rec.on_pomodoro_event(PE.PHASE_START, PomodoroPhase.WORK, T0)
+    rec.on_state_change(StateChange(T0 + 4, F, NF, Reason.GAZE_OUT))
+    assert rec.focus_events == db.focus_events(rec.session_id)
+    assert rec.pomodoro_events == db.pomodoro_events(rec.session_id)
+
+
 def test_finish_adds_stop_once_and_saves_metrics(db, user):
     rec = recorder(db, user)
     rec.on_pomodoro_event(PE.PHASE_START, PomodoroPhase.WORK, T0)
