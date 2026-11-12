@@ -35,7 +35,7 @@ def user(db) -> int:
 
 
 def test_schema_version_set(db):
-    assert db.schema_version == SCHEMA_VERSION == 1
+    assert db.schema_version == SCHEMA_VERSION == 2
 
 
 def test_ensure_user_is_idempotent(db):
@@ -99,7 +99,7 @@ def test_file_database_persists(tmp_path):
         db.save_profile(make_profile(user_id), "mon")
         db.set_setting("work_monitor", "DEL|U2419|ABC")
     with Storage(path) as db:  # повторне відкриття не повторює міграцію
-        assert db.schema_version == 1
+        assert db.schema_version == SCHEMA_VERSION
         assert len(db.list_profiles(user_id)) == 1
         assert db.get_setting("work_monitor") == "DEL|U2419|ABC"
 

@@ -296,6 +296,55 @@ def test_theme_assets_exist_and_apply(qapp):
     qapp.setStyleSheet("")
 
 
+def test_session_is_recorded(main_window):
+    from attention_tracker.calibration.recenter import RecenterResult, SessionAdjustment
+    from attention_tracker.models import FocusState, Reason, StateChange
+
+    window, storage = main_window
+    window._on_recenter_done(RecenterResult(SessionAdjustment(0.0, 0.0), large_shift=False))
+    assert window._recorder is not None
+    window._on_state_changed(StateChange(0.0, FocusState.FOCUSED, FocusState.NOT_FOCUSED, Reason.GAZE_OUT))
+    window.stop_session()
+    assert window._recorder is None
+
+    [info] = storage.list_sessions(window._user_id)
+    assert info.ended_at is not None and info.metrics is not None
+    assert info.settings["pomodoro"] is True
+    events = storage.pomodoro_events(info.id)
+    assert [e.event.value for e in events] == ["phase_start", "stop"]
+    assert len(storage.focus_events(info.id)) == 1
+
+
+def test_free_session_is_recorded(main_window):
+    from attention_tracker.calibration.recenter import RecenterResult, SessionAdjustment
+
+    window, storage = main_window
+    window._pomodoro_box.setChecked(False)
+    window._on_recenter_done(RecenterResult(SessionAdjustment(0.0, 0.0), large_shift=False))
+    window.toggle_pause()
+    window.toggle_pause()
+    window.stop_session()
+    [info] = storage.list_sessions(window._user_id)
+    events = [e.event.value for e in storage.pomodoro_events(info.id)]
+    assert events == ["phase_start", "manual_pause", "manual_resume", "stop"]
+    assert info.settings["pomodoro"] is False
+
+
+def test_unfinished_session_closed_on_start(qapp):
+    from attention_tracker.session.recorder import SessionRecorder
+    from attention_tracker.storage.storage import DEFAULT_USER, Storage
+    from attention_tracker.ui.main_window import MainWindow
+
+    storage = Storage(":memory:")
+    user = storage.ensure_user(DEFAULT_USER, "2026-11-12T10:00:00")
+    SessionRecorder(storage, user, "mon", None, {}, "2026-11-12T10:00:00", 0.0)  # «упала» без finish
+    window = MainWindow(AppConfig(), storage)
+    [info] = storage.list_sessions(user)
+    assert info.ended_at is not None
+    window.close()
+    storage.close()
+
+
 def test_profile_status_texts():
     from attention_tracker.ui.main_window import ProfileStatus, profile_status
     from tests.test_storage import make_profile

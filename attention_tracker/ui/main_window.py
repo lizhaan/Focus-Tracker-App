@@ -38,6 +38,7 @@ from attention_tracker.focus.pomodoro import PomodoroEvent, PomodoroEventInfo, P
 from attention_tracker.focus.stopwatch import Stopwatch
 from attention_tracker.models import FocusState, FrameResult, PomodoroPhase, StateChange
 from attention_tracker.platform.monitors import MonitorInfo, find_screen, list_monitors
+from attention_tracker.session.recorder import SessionRecorder, recover_unfinished
 from attention_tracker.storage.storage import DEFAULT_USER, Storage
 from attention_tracker.storage.user_settings import (
     UserSettings,
@@ -227,6 +228,8 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(tabs)
 
         self._recenter: RecenterWindow | None = None
+        self._recorder: SessionRecorder | None = None
+        recover_unfinished(storage)  # сесії, що обірвались при минулому запуску
 
         app = QGuiApplication.instance()
         app.screenAdded.connect(lambda _s: self.reload_monitors())
@@ -343,8 +346,10 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def stop_session(self) -> None:
-        self._pomodoro.stop(time.monotonic())
+        now = time.monotonic()
+        self._pomodoro.stop(now)
         self._stopwatch.stop()
+        self._finish_recording(now)
         if self._worker is not None:
             self._worker.stop()
             self._worker.wait()
@@ -356,8 +361,10 @@ class MainWindow(QMainWindow):
         if self._stopwatch.started:
             if self._stopwatch.paused:
                 self._stopwatch.resume(now)
+                self._record(PomodoroEvent.MANUAL_RESUME, PomodoroPhase.WORK, now)
             else:
                 self._stopwatch.pause(now)
+                self._record(PomodoroEvent.MANUAL_PAUSE, PomodoroPhase.WORK, now)
         elif self._pomodoro.paused_manual:
             self._pomodoro.resume_manual(now)
         else:
@@ -410,11 +417,13 @@ class MainWindow(QMainWindow):
         self._hint.clear()
         if result.large_shift:
             self.statusBar().showMessage(_LARGE_SHIFT_HINT)
-        now = time.monotonic()  # таймер іде з моменту, коли трекінг почався
+        now = time.monotonic()  # таймер і запис ідуть з моменту, коли трекінг почався
+        self._start_recording(now)
         if self._use_pomodoro:
             self._pomodoro.start(now)
         else:
             self._stopwatch.start(now)
+            self._record(PomodoroEvent.PHASE_START, PomodoroPhase.WORK, now)  # сесія без таймера — одна робоча фаза
             self._apply_phase_view()
         self._tick.start()
 
@@ -428,11 +437,43 @@ class MainWindow(QMainWindow):
             self._recenter.finish()
             self._recenter = None
 
+    # --- запис сесії ---------------------------------------------------------
+
+    def _start_recording(self, now: float) -> None:
+        monitor = self.work_monitor
+        s = self._settings
+        settings = {
+            "n": s.n, "y": s.y, "pomodoro": self._use_pomodoro,
+            "work_minutes": s.work_minutes, "short_break_minutes": s.short_break_minutes,
+            "long_break_minutes": s.long_break_minutes,
+            "pomodoros_before_long_break": s.pomodoros_before_long_break,
+        }
+        self._recorder = SessionRecorder(
+            self._storage,
+            self._user_id,
+            monitor.monitor_id,
+            self._storage.profile_id(self._user_id, monitor.monitor_id, self._camera_id),
+            settings,
+            datetime.now().isoformat(timespec="seconds"),
+            now,
+        )
+
+    def _record(self, event: PomodoroEvent, phase: PomodoroPhase, now: float) -> None:
+        if self._recorder is not None:
+            self._recorder.on_pomodoro_event(event, phase, now)
+
+    def _finish_recording(self, now: float) -> None:
+        if self._recorder is not None and not self._recorder.finished:
+            self._recorder.finish(now, datetime.now().isoformat(timespec="seconds"))
+        self._recorder = None
+
     @Slot()
     def _on_worker_finished(self) -> None:
         self._close_recenter()
-        self._pomodoro.stop(time.monotonic())
+        now = time.monotonic()
+        self._pomodoro.stop(now)
         self._stopwatch.stop()
+        self._finish_recording(now)
         self._tick.stop()
         self._debug.detach()
         self._worker = None
@@ -449,6 +490,7 @@ class MainWindow(QMainWindow):
         self._update_timer()
 
     def _on_pomodoro_event(self, info: PomodoroEventInfo) -> None:
+        self._record(info.event, info.phase, info.ts)
         if info.event is PomodoroEvent.PHASE_END:
             if self._cfg.pomodoro.sound:
                 QApplication.beep()
@@ -508,6 +550,8 @@ class MainWindow(QMainWindow):
     def _on_state_changed(self, change: StateChange) -> None:
         if not self._tracking_active():
             return  # кадр, оброблений до вимкнення трекінгу
+        if self._recorder is not None:
+            self._recorder.on_state_change(change)
         now = time.monotonic()
         if change.new is FocusState.LOST_FOCUS:
             self._pomodoro.pause_auto(now)
