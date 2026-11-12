@@ -8,3 +8,6 @@ __pycache__/
 *.sqlite3
 .DS_Store
 Thumbs.db
+# збірка PyInstaller
+build/
+dist/
