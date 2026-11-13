@@ -81,7 +81,6 @@
   профілі в SQLite, детектор відволікання на профілі, машина станів, перецентрування,
   плашка, Pomodoro, налаштування, темний інтерфейс, запис сесій і метрики, підсумки
   сесії з графіком концентрації, історія сесій, збірка в `.exe` (PyInstaller).
-- **Далі:** оновлений аналіз аналогів.
 
 ## Документація
 
@@ -152,12 +151,6 @@ pytest                           # тести
 pip install -r requirements-build.txt
 pyinstaller packaging/attention_tracker.spec --noconfirm
 ```
-
-Результат — тека `dist/AttentionTracker/` з `AttentionTracker.exe`; Python на компʼютері
-користувача не потрібен. Теку можна передати в zip-архіві. Перевірити збірку без
-камери й вікон: `dist\AttentionTracker\AttentionTracker.exe --self-test report.txt`
-(код виходу 0 і `RESULT: OK` у звіті). Дані застосунку (профілі, налаштування,
-історія) зберігаються в `%APPDATA%\AttentionTracker`.
 
 Відео й кадри не зберігаються і нікуди не передаються — усе працює локально.
 
