@@ -1,5 +1,10 @@
 # Focus-Tracker-App
 
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+![PyQt5](https://img.shields.io/badge/GUI-PyQt5-green)
+![MediaPipe](https://img.shields.io/badge/MediaPipe-0097A7?style=flat&logo=google&logoColor=white)
+![OpenCV](https://img.shields.io/badge/OpenCV-5C3EE8?style=flat&logo=opencv&logoColor=white)
+
 Навчальний проєкт з дисципліни «Парадигма об'єктно-орієнтованого програмування» (2025-2026)
 
 Десктоп-застосунок для трекінгу уваги користувача через веб-камеру під час
