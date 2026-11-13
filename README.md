@@ -1,7 +1,7 @@
 # Focus-Tracker-App
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
-![PyQt5](https://img.shields.io/badge/GUI-PyQt5-green)
+![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-blue)
+![PySide6](https://img.shields.io/badge/GUI-PySide6%20(Qt%206)-green)
 ![MediaPipe](https://img.shields.io/badge/MediaPipe-0097A7?style=flat&logo=google&logoColor=white)
 ![OpenCV](https://img.shields.io/badge/OpenCV-5C3EE8?style=flat&logo=opencv&logoColor=white)
 
