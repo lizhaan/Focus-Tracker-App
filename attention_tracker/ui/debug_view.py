@@ -9,8 +9,8 @@ from __future__ import annotations
 import cv2
 import numpy as np
 from PySide6.QtCore import Qt, Slot
-from PySide6.QtGui import QFont, QImage, QPixmap
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
+from PySide6.QtGui import QCloseEvent, QFont, QImage, QPixmap
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from attention_tracker.calibration.profile import CalibrationProfile
 from attention_tracker.models import FrameFeatures, FrameResult
@@ -32,6 +32,9 @@ _MESH_RADIUS = 1
 _KEY_RADIUS = 3
 _PREVIEW_MIN_SIZE = (640, 360)
 _IDLE_TEXT = "Камера вимкнена — запустіть сесію на вкладці «Сесія»"
+_DETACH_TEXT = "Відкрити окремим вікном"
+_DETACHED_TEXT = "Debug відкрито в окремому вікні. Закрийте його, щоб повернути сюди."
+_WINDOW_TITLE = "Attention Tracker — Debug"
 
 _EYE_POINTS = RIGHT_EYE_EAR + LEFT_EYE_EAR
 
@@ -173,3 +176,75 @@ class DebugView(QWidget):
             lines.append(f"EAR поріг {_fmt(p.ear_threshold, 3, signed=False):>7}")
         lines.append(f"state    {(r_.state.name if r_ is not None and r_.state else '—')}")
         self._values.setText("\n".join(lines))
+
+
+class _DebugWindow(QWidget):
+    """Окреме вікно поверх інших; при закритті повертає DebugView у вкладку."""
+
+    def __init__(self, tab: DebugTab) -> None:
+        super().__init__(None, Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
+        self._tab = tab
+        self.setWindowTitle(_WINDOW_TITLE)
+        QVBoxLayout(self).setContentsMargins(0, 0, 0, 0)
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        self._tab.attach_back()
+        super().closeEvent(event)
+
+
+class DebugTab(QWidget):
+    """Вкладка Debug: DebugView, який можна винести в окреме вікно поруч із сесією."""
+
+    def __init__(self, view: DebugView, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.view = view
+        self._window: _DebugWindow | None = None
+
+        self._detach = QPushButton(_DETACH_TEXT)
+        self._detach.clicked.connect(self.detach_window)
+        self._placeholder = QLabel(_DETACHED_TEXT)
+        self._placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._placeholder.hide()
+
+        row = QHBoxLayout()
+        row.addStretch(1)
+        row.addWidget(self._detach)
+        self._layout = QVBoxLayout(self)
+        self._layout.addLayout(row)
+        self._layout.addWidget(self._placeholder, 1)
+        self._layout.addWidget(view, 1)
+
+    @property
+    def is_detached(self) -> bool:
+        return self._window is not None
+
+    @Slot()
+    def detach_window(self) -> None:
+        if self._window is not None:
+            self._window.raise_()
+            self._window.activateWindow()
+            return
+        size = self.view.size()
+        window = _DebugWindow(self)
+        self._layout.removeWidget(self.view)
+        window.layout().addWidget(self.view)
+        self.view.show()
+        self._window = window
+        self._detach.hide()
+        self._placeholder.show()
+        window.resize(size)
+        window.show()
+
+    def attach_back(self) -> None:
+        window, self._window = self._window, None
+        if window is None:
+            return
+        window.layout().removeWidget(self.view)
+        self._layout.addWidget(self.view, 1)
+        self.view.show()
+        self._placeholder.hide()
+        self._detach.show()
+
+    def close_window(self) -> None:
+        if self._window is not None:
+            self._window.close()

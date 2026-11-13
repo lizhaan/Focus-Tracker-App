@@ -93,3 +93,18 @@ def test_history_tab_in_main_window(main_window):
     window.stop_session()
     assert window._history.session_count == 1  # список оновився після сесії
     window._summary_window.close()
+
+
+def test_debug_tab_detaches_to_window_and_back(main_window):
+    window, _storage = main_window
+    tab = window._debug_tab
+    assert not tab.is_detached
+    assert tab.view.parent() is tab
+
+    tab.detach_window()
+    assert tab.is_detached
+    assert tab.view.window() is not window  # окреме вікно, видно разом із сесією
+
+    tab.close_window()
+    assert not tab.is_detached
+    assert tab.view.parent() is tab

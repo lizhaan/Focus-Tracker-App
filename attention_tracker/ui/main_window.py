@@ -49,7 +49,7 @@ from attention_tracker.storage.user_settings import (
     validate,
 )
 from attention_tracker.ui.calibration_window import CalibrationWindow
-from attention_tracker.ui.debug_view import DebugView
+from attention_tracker.ui.debug_view import DebugTab, DebugView
 from attention_tracker.ui.history_view import HistoryView
 from attention_tracker.ui.overlay import FocusOverlay
 from attention_tracker.ui.recenter_window import RecenterWindow
@@ -230,7 +230,8 @@ class MainWindow(QMainWindow):
         self._history = HistoryView(storage, self._user_id, cfg.metrics)
         tabs.addTab(self._history, "Історія")
         tabs.addTab(self._settings_view, "Налаштування")
-        tabs.addTab(self._debug, "Debug")
+        self._debug_tab = DebugTab(self._debug)
+        tabs.addTab(self._debug_tab, "Debug")
         tabs.currentChanged.connect(self._on_tab_changed)
         self._tabs = tabs
         self.setCentralWidget(tabs)
@@ -635,4 +636,5 @@ class MainWindow(QMainWindow):
         if self._calibration is not None:
             self._calibration.close()
         self._overlay.close()
+        self._debug_tab.close_window()
         super().closeEvent(event)
